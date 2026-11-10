@@ -1,0 +1,4 @@
+# Apariencia de la app: un solo color de acento (azul) y fondo claro
+[theme]
+primaryColor = "#103f91"
+font = "sans serif"

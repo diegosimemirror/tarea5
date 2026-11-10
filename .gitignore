@@ -1,0 +1,15 @@
+# Datos crudos del MEF: pesan más de 500 MB y se vuelven a descargar con scripts/01_descargar.py
+data/crudo/
+
+# Claves y configuración privada: nunca se suben
+.env
+.streamlit/secrets.toml
+
+# Archivos temporales de Python y del sistema
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+desktop.ini
