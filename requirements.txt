@@ -1,0 +1,4 @@
+# Paquetes que usa el proyecto (se instalan una sola vez con: pip install -r requirements.txt)
+streamlit>=1.40   # convierte la app de Python en una página web
+pandas>=2.2       # tablas: leer, filtrar, unir y resumir datos
+pyarrow>=15       # leer y guardar archivos parquet (formato liviano para tablas)
