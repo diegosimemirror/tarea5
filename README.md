@@ -1,5 +1,7 @@
 # Portafolio de proyectos del Estado · La cartera de inversiones, en simple
 
+Simplificamos la lectura de cómo van los proyectos de inversión del Estado peruano: cuántos hay, cuánto cuestan, cuánto se ha ejecutado, dónde están y qué problemas reportan, en preguntas simples y con datos abiertos del MEF.
+
 > **Demo en vivo:** https://proyectos-inversiones-peru.streamlit.app/ · Versión del 10/11/2026. Las partes marcadas **POR COMPLETAR** las escribe el founder.
 
 ## 1. One-liner
