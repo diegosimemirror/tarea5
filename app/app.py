@@ -509,23 +509,35 @@ tabla = pd.DataFrame({
 })
 if unidad == "Todas las unidades":
     tabla["Unidad ejecutora"] = vista["unidad"].str.title()
-# Primera columna: una casilla "Ver ficha" en cada fila; al marcarla se abre la ficha de ese proyecto
+# Dos casillas al inicio de cada fila:
+#   "Ver ficha": al marcarla se abre la ficha de ese proyecto
+#   "Ubicar":    al marcarla, el proyecto se resalta en el mapa (al final de la página). Las marcas se guardan por proyecto,
+#                así que se mantienen aunque se abra una ficha o cambie el orden
+ubicar = set(st.session_state.get("ubicar_ids", []))
 tabla.insert(0, "Ficha", False)
-# La clave cambia con los filtros y después de abrir cada ficha: así la lista vuelve a mostrarse sin casillas marcadas
+tabla.insert(1, "Mapa", vista["id"].isin(ubicar))
+# La clave cambia con los filtros y después de abrir cada ficha: así la lista vuelve a mostrarse sin "Ver ficha" marcado
 version = st.session_state.get("version_lista", 0)
 clave_lista = f"lista_{version}_" + str(abs(hash((sector, unidad, len(vista), orden, busqueda, solo_alerta, tuple(vista["id"].head(3))))))
 editada = st.data_editor(
     tabla, hide_index=True, width="stretch", height=min(38 + 35 * len(tabla), 460), key=clave_lista,
-    disabled=[c for c in tabla.columns if c != "Ficha"],          # solo se puede marcar "Ver ficha"; los datos no se editan
+    disabled=[c for c in tabla.columns if c not in ("Ficha", "Mapa")],   # solo se marcan las casillas; los datos no se editan
     column_config={
         "Ficha": st.column_config.CheckboxColumn("Ver ficha", help="Marca la casilla para abrir la ficha del proyecto", width=90),
+        "Mapa": st.column_config.CheckboxColumn("Ubicar", help="Marca la casilla para resaltar el proyecto en el mapa", width=75),
         "Proyecto": st.column_config.TextColumn("Proyecto", width="large"),
         "Costo (S/)": st.column_config.NumberColumn("Costo (S/)", format="localized"),
         "Avance": st.column_config.ProgressColumn("Avance", min_value=0, max_value=100, format="%.0f%%"),
         "Atraso (meses)": st.column_config.NumberColumn("Atraso (meses)", format="%d"),
     })
 st.caption(plural(len(vista), "proyecto") + ("" if unidad == "Todas las unidades" else f" de {unidad.title()}")
-           + ". Marca «Ver ficha» en una fila para abrir la ficha del proyecto.")
+           + ". Marca «Ver ficha» para abrir la ficha de un proyecto, o «Ubicar» para resaltarlo en el mapa (al final de la página).")
+
+# Actualizar las marcas de "Ubicar" de los proyectos que están en la lista (los demás conservan su marca)
+#   Antes: casillas en la tabla | Después: el conjunto de proyectos marcados, guardado entre clics
+visibles = set(vista["id"])
+marcados_mapa = set(vista.loc[editada.index[editada["Mapa"]], "id"])
+st.session_state["ubicar_ids"] = sorted((ubicar - visibles) | marcados_mapa)
 
 # Abrir la ficha de la fila marcada. La tabla conserva el índice de 'vista', así que se busca la fila por ese índice.
 marcadas = editada.index[editada["Ficha"]].tolist()
@@ -559,12 +571,33 @@ with st.expander("Mapa: ¿dónde están los proyectos de la lista?", expanded=Tr
         capa = pdk.Layer("ScatterplotLayer", data=datos_mapa, get_position=["lon", "lat"], get_fill_color="color",
                          get_radius=3000, radius_min_pixels=4, radius_max_pixels=12, pickable=True,
                          stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1)
-        st.pydeck_chart(pdk.Deck(layers=[capa], map_provider="carto", map_style="light",
-                                 initial_view_state=pdk.ViewState(latitude=-9.6, longitude=-75.0, zoom=4.2),
+        capas = [capa]
+        # Proyectos marcados con "Ubicar": un anillo azul grande encima de su punto, y el mapa se centra en el primero
+        resaltados = datos_mapa[puntos["id"].isin(st.session_state.get("ubicar_ids", [])).to_numpy()]
+        vista_inicial = pdk.ViewState(latitude=-9.6, longitude=-75.0, zoom=4.2)
+        if len(resaltados):
+            capas.append(pdk.Layer("ScatterplotLayer", data=resaltados, get_position=["lon", "lat"], filled=False, stroked=True,
+                                   get_radius=9000, radius_min_pixels=14, radius_max_pixels=30,
+                                   get_line_color=[16, 63, 145, 255], line_width_min_pixels=4, pickable=False))
+            vista_inicial = pdk.ViewState(latitude=float(resaltados["lat"].iloc[0]), longitude=float(resaltados["lon"].iloc[0]),
+                                          zoom=6.5 if len(resaltados) == 1 else 5)
+        st.pydeck_chart(pdk.Deck(layers=capas, map_provider="carto", map_style="light", initial_view_state=vista_inicial,
                                  tooltip={"html": "<b>{titulo}</b><br/>{estado} · {costo} · {avance}"}), height=480)
         # Leyenda: el color siempre va con el nombre del estado y su símbolo
         st.markdown("".join(chip(e, int((puntos["estado"] == e).sum())) for e in ORDEN_ESTADOS if (puntos["estado"] == e).any()),
                     unsafe_allow_html=True)
+        # Qué proyectos están resaltados (y cuáles no se pueden ubicar por no tener coordenadas)
+        marcados = vista[vista["id"].isin(st.session_state.get("ubicar_ids", []))]
+        if len(marcados):
+            con_punto = marcados.dropna(subset=["lat", "lon"])
+            sin_punto = marcados[marcados["lat"].isna() | marcados["lon"].isna()]
+            texto_marcados = "; ".join(f"{q[:70]} ({l})" for q, l in zip(con_punto["que_es"], con_punto["lugar"]))
+            if len(con_punto):
+                st.markdown(f'<p class="nota"><b style="color:#103f91">◯</b> Resaltado en el mapa: {html.escape(texto_marcados)}</p>',
+                            unsafe_allow_html=True)
+            if len(sin_punto):
+                st.markdown(f'<p class="nota">Sin coordenadas registradas, no se puede ubicar: '
+                            f'{html.escape("; ".join(q[:70] for q in sin_punto["que_es"]))}</p>', unsafe_allow_html=True)
     st.caption(f"{len(puntos):,} de {len(vista):,} proyectos de la lista tienen coordenadas. La ubicación la registra la entidad; "
                "a veces es la de su oficina y no la de la obra.")
 

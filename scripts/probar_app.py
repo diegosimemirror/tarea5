@@ -28,6 +28,14 @@ preguntas = [p for p in ["¿Tiene financiamiento?", "¿Qué problemas reporta?",
 print("3. Ficha por enlace (2613205) — errores:", len(app.exception), "| preguntas nuevas presentes:", preguntas)
 del app.query_params["ficha"]
 
+# "Ubicar": un proyecto marcado debe aparecer resaltado en el mapa (se simula la marca guardada en la sesión)
+app.session_state["ubicar_ids"] = ["2613205"]
+app.run()
+resaltado = [m.value for m in app.markdown if "Resaltado en el mapa" in m.value]
+print("3b. Ubicar en el mapa (2613205) — errores:", len(app.exception), "| resaltado:", bool(resaltado),
+      "| casilla marcada en la lista:", int(lista()["Mapa"].sum()))
+app.session_state["ubicar_ids"] = []
+
 # Cambiar de ministerio (Transportes) y volver a revisar
 app.selectbox[0].select("TRANSPORTES Y COMUNICACIONES").run()
 print("4. Transportes — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric])
