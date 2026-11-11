@@ -2,7 +2,7 @@
 
 Simplificamos la lectura de cómo van los proyectos de inversión del Estado peruano: cuántos hay, cuánto cuestan, cuánto se ha ejecutado, dónde están y qué problemas reportan, en preguntas simples y con datos abiertos del MEF.
 
-> **Demo en vivo:** https://proyectos-inversiones-peru.streamlit.app/ · Versión del 10/11/2026. Las partes marcadas **POR COMPLETAR** las escribe el founder.
+> **Demo en vivo:** https://proyectos-inversiones-peru.streamlit.app/ · Versión del 11/11/2026. Las partes marcadas **POR COMPLETAR** las escribe el founder.
 
 ## 1. One-liner
 
@@ -20,7 +20,7 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 - **Qué les pasa:**
   - La información existe, pero está escrita para especialistas: siglas (PIM, devengado, UEI, OPMI, IOARR), formatos (8, 9, 12-B) y fichas de un proyecto a la vez.
   - Los informes de seguimiento son textos largos que no dejan ver el conjunto.
-- **Cuánto pesa:** el gobierno nacional tiene **12 731 inversiones activas por S/ 621 mil millones**. Con nuestras reglas, **3 380 están atrasadas** según sus propias fechas registradas.
+- **Cuánto pesa:** el gobierno nacional tiene **12 731 inversiones activas por S/ 621 mil millones**. Con nuestras reglas, **3 631 están atrasadas** según sus propias fechas registradas.
 - **Cómo lo resuelven hoy:** abren el SSI ficha por ficha, piden un Excel a la OPMI o leen informes.
 - **Evidencia:** notas de 3 conversaciones en [`docs/research/`](docs/research/). Las dos primeras son anteriores a la app y están reconstruidas de memoria:
   - **Noviembre–diciembre de 2019, asesores de la OPMI de un ministerio del sector salud** ([nota 1](docs/research/01_conversacion.md)): para seguir las obras del Bicentenario era difícil tener al día una matriz con ejecución, ubicación, problemas y riesgos.
@@ -29,10 +29,11 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 
 ## 4. Solución e insight
 
-**Solución.** Primero ves la **cartera completa**: cada ministerio o entidad con su número de proyectos y su costo. Luego eliges un ministerio y ves:
+**Solución.** Primero ves la **cartera completa**: cada ministerio o entidad con su número de proyectos y su costo, y cinco indicadores de cartera (presupuesto por gastar, cambio de costos, financiamiento, problemas reportados y atraso). Luego eliges un ministerio y ves:
 1. El **árbol de su cartera**: el ministerio, sus unidades ejecutoras y sus proyectos.
-2. Cada proyecto respondido en **cinco preguntas**: ¿qué es?, ¿qué problema resuelve?, ¿cuánto cuesta y cuánto se ha gastado?, ¿cuándo termina? y ¿cómo va?
-3. El detalle técnico, a un clic, en el MEF.
+2. La **lista de proyectos**, ordenable, y un **mapa** donde se ubica cada uno.
+3. La **ficha** de cada proyecto, con un título que dice qué hace y para qué (escrito con IA a partir de la descripción del MEF) y preguntas simples: ¿qué es?, ¿qué problema resuelve?, ¿cuánto cuesta?, ¿cuánto se ha ejecutado?, ¿tiene financiamiento?, ¿cuándo termina?, ¿cómo va? y ¿qué problemas reporta?
+4. El detalle técnico, a un clic, en el MEF.
 
 **Insight.** El problema no es la falta de datos, porque el MEF publica todo y a diario. El problema es que **están escritos para quien los registra, no para quien decide**. El valor está en traducir, no en sumar indicadores.
 
@@ -93,10 +94,10 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 |---|---|---|
 | Servidor | US$ 0 (Streamlit Community Cloud) | ≈ US$ 25 al mes, compartido por todos los clientes |
 | Datos | US$ 0 (MEF, datos abiertos) | US$ 0 |
-| Tokens de IA | US$ 0 (los textos salen de reglas) | ≈ US$ 4 por actualizar los 12 731 proyectos nacionales; ≈ US$ 45 por los 150 641 de todo el país |
+| Tokens de IA | US$ 0 (nivel gratuito de Gemini) | ≈ US$ 1,5 por titular los ≈ 6 100 proyectos nacionales con descripción; ≈ US$ 36 como máximo por los 150 641 de todo el país |
 
-- **Supuesto de tokens:** 1 000 de entrada y 250 de salida por proyecto, con un modelo pequeño a US$ 0,15 y US$ 0,60 por millón de tokens. El precio exacto se confirma al elegir el proveedor (sección 8).
-- **Con 20 entidades,** servidor más IA suman ≈ US$ 70 al mes: **≈ US$ 3,5 por entidad**, frente a un precio de US$ 100.
+- **Tokens medidos en la corrida real:** ≈ 360 de entrada y 55 de salida por proyecto (en grupos de 20), con Gemini 3.5 Flash-Lite a US$ 0,30 y US$ 2,50 por millón de tokens: ≈ US$ 0,00024 por proyecto.
+- **Con 20 entidades,** el servidor (US$ 25) más rehacer cada mes los títulos de todo el país (≈ US$ 36) suman ≈ US$ 61 al mes: **≈ US$ 3 por entidad**, frente a un precio de US$ 100.
 - **La IA se paga por proyecto actualizado, no por usuario,** así que el costo por cliente baja con cada cliente nuevo.
 
 ### Qué sigue
@@ -111,7 +112,7 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 |---|---|---|---|
 | Scraping y APIs (datos abiertos) | 03 | `scripts/01_descargar.py` | Los datos de inversión pública ya existen y son públicos: el valor está en traerlos solos y al día, no en digitarlos. |
 | Dashboards | 05 | `app/app.py` | La usuaria es la alta dirección: necesita ver su cartera en una pantalla, en el navegador, sin instalar nada. |
-| LLMs con salidas estructuradas | 08 | `scripts/06_ia.py` → `data/procesado/ia_titulos.parquet` (en prueba: MIDIS y RENIEC) | El nombre oficial de un proyecto casi nunca dice qué hace. La IA lo resume desde la descripción técnica del MEF en un título de una línea, con salida en JSON y un control automático: si el título trae una cifra que no está en el texto del MEF, se descarta. |
+| LLMs con salidas estructuradas | 08 | `scripts/06_ia.py` → `data/procesado/ia_titulos.parquet` (en curso: se titulan primero los proyectos de mayor costo; los que aún no tienen título conservan su nombre oficial) | El nombre oficial de un proyecto casi nunca dice qué hace. La IA lo resume desde la descripción técnica del MEF en un título de una línea, con salida en JSON y un control automático: si el título trae una cifra que no está en el texto del MEF, se descarta. El título dice qué hace el proyecto y para qué; el nombre oficial sigue en la ficha. |
 
 ## 9. Qué hizo el agente
 
