@@ -327,13 +327,21 @@ st.caption(f"Ministerios y entidades del gobierno nacional · datos del Minister
 TODO = "CARTERA COMPLETA"   # opción especial: todos los ministerios y entidades juntos
 conteo = inversiones.groupby("sector").size().sort_values(ascending=False)
 opciones = [TODO] + list(conteo.index)
-por_defecto = 0   # la página abre en la cartera completa
+# Elección inicial (solo en la primera carga): la cartera completa; pero con un enlace a una ficha (?ficha=CUI),
+#   el ministerio de ese proyecto, para que la ficha se muestre. Después, el selector conserva lo que elija la persona.
+if "cartera" not in st.session_state:
+    st.session_state["cartera"] = TODO
+    pedido_inicial = st.query_params.get("ficha")
+    if pedido_inicial:
+        hallado = inversiones.loc[inversiones["id"] == pedido_inicial, "sector"]
+        if len(hallado) and hallado.iloc[0] in opciones:
+            st.session_state["cartera"] = hallado.iloc[0]
 def reiniciar_filtros():
     """Al cambiar de ministerio, los estados elegidos vuelven a 'Todos los estados' (no se arrastran del ministerio anterior)."""
     for clave in ("estado_ministerio", "estado_unidad"):
         st.session_state.pop(clave, None)
 
-sector = st.selectbox("¿Qué cartera quieres ver?", opciones, index=por_defecto, on_change=reiniciar_filtros,
+sector = st.selectbox("¿Qué cartera quieres ver?", opciones, key="cartera", on_change=reiniciar_filtros,
                       format_func=lambda s: f"Cartera completa — {len(inversiones):,} proyectos" if s == TODO
                       else f"{NOMBRES.get(s, s.title())} — {conteo[s]:,} proyectos")
 cartera = inversiones if sector == TODO else inversiones[inversiones["sector"] == sector]

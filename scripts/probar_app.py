@@ -72,5 +72,12 @@ app.selectbox[2].select(app.selectbox[2].options[1]).run()
 app.selectbox[3].select("Sin presupuesto este año").run()
 print("8. Nivel 3, primera unidad y 'Sin presupuesto este año' — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric])
 
+# Abrir la app directamente desde un enlace a una ficha (RENIEC), sin elegir nada antes: debe ir a su ministerio y abrir la ficha
+enlace = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app" / "app.py"), default_timeout=120)
+enlace.query_params["ficha"] = "2324655"
+enlace.run()
+print("9. Enlace directo ?ficha=2324655 — errores:", len(enlace.exception), "| cartera:", enlace.selectbox[0].value,
+      "| ficha abierta:", any("¿Cuánto se ha ejecutado?" in m.value for m in enlace.markdown))
+
 for e in app.exception:
     print("ERROR:", e.value)
