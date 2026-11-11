@@ -154,12 +154,28 @@ def avance(f):
     return max(f["avance_fisico"] if pd.notna(f["avance_fisico"]) else 0, fin_)
 
 # ============================================================
-# PASO 4.5: ¿Cuándo termina?
+# PASO 4.5: ¿Cuándo termina?  (periodo de ejecución + cómo está respecto de su fecha de fin)
+#   Antes: inicio = 2016-02-01, fin = 2018-02-01
+#   Después: "febrero 2016 – febrero 2018 (24 meses). Debía terminar en febrero de 2018: lleva ..."
 # ============================================================
+def periodo(f):
+    """Periodo de ejecución registrado y su duración en meses (días / 30,44, redondeado)."""
+    ini, fin = f["inicio"], f["fin"]
+    if pd.isna(ini) or pd.isna(fin):
+        return "No se consigna información sobre su duración."
+    if fin < ini:   # 12 casos: el fin registrado es anterior al inicio (p. ej., inicio digitado como 2069)
+        return "Las fechas de inicio y fin registradas no son coherentes."
+    meses = round((fin - ini).days / 30.44)
+    duracion = "menos de 1 mes" if meses == 0 else ("1 mes" if meses == 1 else f"{meses} meses")
+    return f"{MESES[ini.month - 1]} {ini.year} – {MESES[fin.month - 1]} {fin.year} ({duracion})."
+
 def cuando(f):
+    return f"{periodo(f)} {situacion_plazo(f)}".strip()
+
+def situacion_plazo(f):
     fin = f["fin"]
     if pd.isna(fin):
-        return "No tiene fecha de término registrada."
+        return ""
     if fin >= HOY:
         m = meses_entre(HOY, fin)
         resto = "este mes" if m == 0 else (f"faltan {m} meses" if m < 24 else f"faltan {m // 12} años")

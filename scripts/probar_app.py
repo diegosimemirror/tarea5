@@ -22,5 +22,11 @@ print("3. Después de abrir la ficha — errores:", len(app.exception))
 # Cambiar de ministerio (Transportes) y volver a revisar
 app.selectbox[0].select("TRANSPORTES Y COMUNICACIONES").run()
 print("4. Transportes — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric])
+
+# Elegir la cartera completa: debe mostrar el desglose por ministerio y ninguna tarjeta de proyecto
+app.selectbox[0].select("CARTERA COMPLETA").run()
+fichas = [b for b in app.button if b.label == "Ver ficha"]
+print("5. Cartera completa — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric],
+      "| tarjetas:", len(fichas), "| cajas del desglose:", sum(m.value.count('class="edt-caja"') for m in app.markdown))
 for e in app.exception:
     print("ERROR:", e.value)

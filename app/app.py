@@ -2,7 +2,8 @@
 # PROCESO 5: Mostrar la cartera de inversiones en lenguaje simple (aplicación web)
 # Insumo:    data/procesado/cinco_preguntas.parquet (resultado del Proceso 4)
 # Resultado: una página web con tres pasos:
-#              1) elegir un ministerio, 2) ver su árbol y sus proyectos, 3) abrir la ficha de cinco preguntas
+#              1) elegir la cartera completa o un ministerio, 2) ver su árbol y sus proyectos, 3) abrir la ficha de cinco preguntas
+#            (en la cartera completa solo se ve la estructura de desglose por ministerio o entidad)
 # Uso:       uv run --with streamlit --with pandas --with pyarrow streamlit run app/app.py
 # ============================================================
 
@@ -20,7 +21,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 DATOS = RAIZ / "data" / "procesado" / "cinco_preguntas.parquet"
 FECHA_DATOS = "08/11/2026"
 
-st.set_page_config(page_title="Inversiones en simple", page_icon="🏛️", layout="wide")
+st.set_page_config(page_title="Cartera de inversiones del Estado", page_icon="🏛️", layout="wide")
 
 # ============================================================
 # PASO 5.1: Cargar los datos una sola vez (st.cache_data guarda la tabla en memoria entre clics)
@@ -82,6 +83,15 @@ st.markdown("""
 .chip b {display:inline-grid; place-items:center; width:1.1em;}
 .respuesta {font-size:1.05rem; margin:0 0 0.9rem 0;}
 .pregunta {font-weight:700; margin:0;}
+/* Estructura de desglose de la cartera completa: una caja arriba y los sectores debajo */
+.edt-raiz {max-width:380px; margin:0.5rem auto 0 auto; text-align:center; padding:10px 14px; border:1.5px solid #103f91;
+           border-radius:8px; background:rgba(16,63,145,0.08);}
+.edt-linea {width:0; height:18px; margin:0 auto; border-left:1.5px solid rgba(128,128,128,0.6);}
+.edt-hijos {display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px; padding-top:14px;
+            border-top:1.5px solid rgba(128,128,128,0.6); margin-bottom:0.5rem;}
+.edt-caja {padding:8px 10px; border:1px solid rgba(128,128,128,0.55); border-radius:8px; font-size:0.92rem;}
+.edt-raiz b, .edt-caja b {display:block;}
+.edt-raiz span, .edt-caja span {opacity:0.75;}
 </style>""", unsafe_allow_html=True)
 
 def chip(estado, n=None):
@@ -94,18 +104,38 @@ def millones(x):
         return "sin dato"
     return f"S/ {x / 1e9:,.1f} mil millones" if x >= 1e9 else (f"S/ {x / 1e6:,.1f} millones" if x >= 1e6 else f"S/ {x / 1e3:,.0f} mil")
 
-# ============================================================
-# PASO 5.2: Paso 1 de la página — elegir un ministerio
-# ============================================================
-st.title("Cartera de inversiones del Estado, en simple")
-st.caption(f"Ministerios y entidades del gobierno nacional · datos del MEF al {FECHA_DATOS} · versión sin IA (las respuestas salen de reglas)")
+def plural(n, palabra):
+    """Cuenta en palabras sin decimales: 1 -> '1 proyecto'; 715 -> '715 proyectos'."""
+    n = int(n)
+    return f"{n:,} {palabra}" if n == 1 else f"{n:,} {palabra}s"
 
+def pie_de_pagina():
+    """PASO 5.6: Cómo se calcula el estado (transparencia) y fuente de los datos."""
+    with st.expander("¿Cómo se calcula el estado?"):
+        st.markdown(
+            "- **Atrasado:** la fecha de término registrada ya pasó y el avance es menor a 95 %.\n"
+            "- **En riesgo este año:** tiene presupuesto 2026 y lleva gastado menos de la mitad.\n"
+            "- **Sin reportes recientes:** ya empezó, pero su último reporte de avance (formato 12-B) tiene más de 180 días.\n"
+            "- **Por cerrar:** está prácticamente terminado (95 % o más) y falta el cierre formal.\n"
+            "- **Sin presupuesto este año:** está aprobado, no ha empezado y no tiene presupuesto en 2026.\n"
+            "- **En marcha:** ninguna de las anteriores.\n\n"
+            "El avance es el mayor entre el avance físico y el porcentaje gastado del costo. Reglas de ejemplo, por validar.")
+    st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}.")
+
+# ============================================================
+# PASO 5.2: Paso 1 de la página — elegir la cartera completa o un ministerio
+# ============================================================
+st.title("Cartera de inversiones del Estado")
+st.caption(f"Ministerios y entidades del gobierno nacional · datos del Ministerio de Economía y Finanzas (MEF) al {FECHA_DATOS}")
+
+TODO = "CARTERA COMPLETA"   # opción especial: todos los ministerios y entidades juntos
 conteo = inversiones.groupby("sector").size().sort_values(ascending=False)
-opciones = list(conteo.index)
+opciones = [TODO] + list(conteo.index)
 por_defecto = opciones.index("DESARROLLO E INCLUSION SOCIAL") if "DESARROLLO E INCLUSION SOCIAL" in opciones else 0
-sector = st.selectbox("Elige un ministerio o entidad", opciones, index=por_defecto,
-                      format_func=lambda s: f"{NOMBRES.get(s, s.title())} — {conteo[s]:,} proyectos")
-cartera = inversiones[inversiones["sector"] == sector]
+sector = st.selectbox("¿Qué cartera quieres ver?", opciones, index=por_defecto,
+                      format_func=lambda s: f"Cartera completa — {len(inversiones):,} proyectos" if s == TODO
+                      else f"{NOMBRES.get(s, s.title())} — {conteo[s]:,} proyectos")
+cartera = inversiones if sector == TODO else inversiones[inversiones["sector"] == sector]
 nombre_sector = NOMBRES.get(sector, sector.title())
 
 c1, c2, c3 = st.columns(3)
@@ -114,6 +144,23 @@ c2.metric("Cuestan en total", millones(cartera["costo"].sum()))
 c3.metric("Atrasados", f"{(cartera['estado'] == 'Atrasado').sum():,}")
 st.markdown("".join(chip(e, int((cartera["estado"] == e).sum())) for e in sorted(ESTADOS, key=lambda e: ESTADOS[e][2])),
             unsafe_allow_html=True)
+
+# ============================================================
+# PASO 5.2b: Cartera completa — estructura de desglose: "Cartera total" arriba y cada ministerio o entidad debajo,
+#            con su número de proyectos y su costo. En esta vista no se muestran las fichas de los proyectos.
+#   Antes: 12 731 filas (una por proyecto) | Después: 33 cajas (una por ministerio o entidad), de mayor a menor costo
+# ============================================================
+if sector == TODO:
+    sectores = (inversiones.groupby("sector").agg(n=("id", "size"), costo=("costo", "sum"))
+                .sort_values("costo", ascending=False))
+    cajas = "".join(f'<div class="edt-caja"><b>{html.escape(NOMBRES.get(s.Index, s.Index.title()))}</b>'
+                    f'<span>{plural(s.n, "proyecto")} · {millones(s.costo)}</span></div>' for s in sectores.itertuples())
+    st.markdown(f'<div class="edt-raiz"><b>Cartera total</b><span>{plural(len(inversiones), "proyecto")} · '
+                f'{millones(inversiones["costo"].sum())}</span></div><div class="edt-linea"></div>'
+                f'<div class="edt-hijos">{cajas}</div>', unsafe_allow_html=True)
+    st.caption("Ordenados de mayor a menor costo. Para ver los proyectos, elige un ministerio o entidad arriba.")
+    pie_de_pagina()
+    st.stop()   # en la cartera completa la página termina aquí
 
 # ============================================================
 # PASO 5.3: Paso 2 — el árbol: ministerio → unidades ejecutoras (se muestran las 8 con más proyectos)
@@ -125,10 +172,12 @@ unidades = (cartera.groupby("unidad")
 def etiqueta(texto, ancho=26):
     return "\\n".join(textwrap.wrap(texto.replace('"', "'"), ancho))
 
-nodos = [f'raiz [label="{etiqueta(nombre_sector, 34)}\\n{len(cartera):,} proyectos", shape=box, style="rounded,filled", fillcolor="#e9eef8", color="#103f91", fontname="Helvetica"];']
-for i, (unidad, fila) in enumerate(unidades.head(8).iterrows()):
-    borde = "#d03b3b" if fila["atrasados"] else "#9aa0a6"
-    nodos.append(f'u{i} [label="{etiqueta(unidad.title())}\\n{fila["n"]:,} proyectos · {fila["atrasados"]:,} atrasados", '
+nodos = [f'raiz [label="{etiqueta(nombre_sector, 34)}\\n{plural(len(cartera), "proyecto")}", shape=box, style="rounded,filled", fillcolor="#e9eef8", color="#103f91", fontname="Helvetica"];']
+# itertuples() conserva los números enteros; iterrows() los convertía en decimales (715 -> "715.0")
+for i, u in enumerate(unidades.head(8).itertuples()):
+    borde = "#d03b3b" if u.atrasados else "#9aa0a6"
+    atrasos = "ninguno atrasado" if u.atrasados == 0 else plural(u.atrasados, "atrasado")
+    nodos.append(f'u{i} [label="{etiqueta(u.Index.title())}\\n{plural(u.n, "proyecto")} · {atrasos}", '
                  f'shape=box, style="rounded", color="{borde}", fontname="Helvetica", fontsize=11];')
     nodos.append(f"raiz -> u{i};")
 if len(unidades) > 8:
@@ -173,8 +222,8 @@ def ficha(fila):
         preguntas.append(("¿Qué lo frena?", fila["lo_que_frena"]))
     for pregunta, respuesta in preguntas:
         st.markdown(f'<p class="pregunta">{pregunta}</p><p class="respuesta">{html.escape(respuesta)}</p>', unsafe_allow_html=True)
-    st.caption("Textos redactados por IA a partir de los datos del MEF; revisa el detalle técnico antes de citarlos."
-               if fila["redactado_por_ia"] else "Textos generados con reglas a partir de los datos del MEF (versión sin IA).")
+    st.caption("Resumen redactado con inteligencia artificial a partir de los datos del MEF; confírmalo en el detalle técnico antes de citarlo."
+               if fila["redactado_por_ia"] else "Resumen elaborado automáticamente a partir de los datos del MEF.")
     if fila["cui"]:
         st.link_button("Ver el detalle técnico en el MEF ↗", f'https://ofi5.mef.gob.pe/ssi/Ssi/Index?codigo={fila["cui"]}&tipo=2')
     with st.expander("Para especialistas (términos de Invierte.pe)"):
@@ -190,7 +239,7 @@ def ficha(fila):
                 if fila[col]:
                     st.markdown(f"*{etq}:* {fila[col][:600]}")
 
-st.subheader(f"{len(vista):,} proyectos" + ("" if unidad == "Todas las unidades" else f" de {unidad.title()}"))
+st.subheader(plural(len(vista), "proyecto") + ("" if unidad == "Todas las unidades" else f" de {unidad.title()}"))
 if "mostrar" not in st.session_state:
     st.session_state.mostrar = 24
 columnas = st.columns(3)
@@ -208,15 +257,6 @@ if len(vista) > st.session_state.mostrar:
         st.rerun()
 
 # ============================================================
-# PASO 5.6: Cómo se calcula (transparencia) y fuente
+# PASO 5.6: Cómo se calcula (transparencia) y fuente — definido arriba en pie_de_pagina()
 # ============================================================
-with st.expander("¿Cómo se calcula el estado?"):
-    st.markdown(
-        "- **Atrasado:** la fecha de término registrada ya pasó y el avance es menor a 95 %.\n"
-        "- **En riesgo este año:** tiene presupuesto 2026 y lleva gastado menos de la mitad.\n"
-        "- **Sin reportes recientes:** ya empezó, pero su último reporte de avance (formato 12-B) tiene más de 180 días.\n"
-        "- **Por cerrar:** está prácticamente terminado (95 % o más) y falta el cierre formal.\n"
-        "- **Sin presupuesto este año:** está aprobado, no ha empezado y no tiene presupuesto en 2026.\n"
-        "- **En marcha:** ninguna de las anteriores.\n\n"
-        "El avance es el mayor entre el avance físico y el porcentaje gastado del costo. Reglas de ejemplo, por validar.")
-st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}.")
+pie_de_pagina()
