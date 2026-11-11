@@ -144,8 +144,7 @@ def cuanto(f):
     else:
         gasto = f"Se ha gastado {millones(gastado)} ({pct:.0f} %)."
     t = f"Cuesta {millones(costo)}. " + gasto
-    if f["viable"] and f["viable"] > 0 and costo / f["viable"] >= 1.2:
-        t += f" Su costo subió {100 * (costo / f['viable'] - 1):.0f} % desde que se aprobó."
+    # El cambio de costo desde que se aprobó (subió o bajó) lo calcula el Proceso 7 (frase_costo) y la app lo agrega aquí
     return t.strip()
 
 def avance(f):

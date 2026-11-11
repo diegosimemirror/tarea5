@@ -18,7 +18,8 @@ import pandas as pd
 import streamlit as st
 
 RAIZ = Path(__file__).resolve().parents[1]
-DATOS = RAIZ / "data" / "procesado" / "cinco_preguntas.parquet"
+PROCESADO = RAIZ / "data" / "procesado"
+DATOS = PROCESADO / "cinco_preguntas.parquet"
 FECHA_DATOS = "08/11/2026"
 
 st.set_page_config(page_title="Cartera de inversiones del Estado", page_icon="🏛️", layout="wide")
@@ -43,9 +44,21 @@ def cargar():
         tabla.loc[con_ia, "problema"] = tabla.loc[con_ia, "problema_ia"]
         tabla.loc[con_ia, "lo_que_frena"] = tabla.loc[con_ia, "frena_ia"]
         tabla.loc[con_ia, "redactado_por_ia"] = True
-    return tabla
+    # Indicadores de cartera del Proceso 7: las frases para la ficha y la clasificación de problemas de cada proyecto
+    #   Antes: 1 fila por proyecto con las cinco preguntas | Después: la misma fila, con 8 columnas más
+    frases = pd.read_parquet(PROCESADO / "indicadores_proyecto.parquet")[
+        ["id", "brechas_lista", "frase_brecha", "frase_costo", "frase_dinero", "frase_problemas", "frase_programacion",
+         "clase_problema", "temas"]]
+    return tabla.merge(frases, on="id", how="left")
+
+@st.cache_data
+def cargar_indicadores():
+    """Una fila por ministerio o entidad, más la fila 'CARTERA COMPLETA' (Proceso 7)."""
+    return pd.read_parquet(PROCESADO / "indicadores_cartera.parquet").set_index("sector")
 
 inversiones = cargar()
+indicadores = cargar_indicadores()
+DIAS_AL_CIERRE = (pd.Timestamp("2026-12-31") - pd.Timestamp("2026-11-10")).days   # misma fecha de referencia que los Procesos 4 y 7
 
 # Nombres que entiende cualquiera, en lugar de los nombres de sector del MEF
 NOMBRES = {
@@ -92,6 +105,19 @@ st.markdown("""
 .edt-caja {padding:8px 10px; border:1px solid rgba(128,128,128,0.55); border-radius:8px; font-size:0.92rem;}
 .edt-raiz b, .edt-caja b {display:block;}
 .edt-raiz span, .edt-caja span {opacity:0.75;}
+/* Tarjetas de indicadores: una pregunta, una cifra y una frase */
+.cifra {font-size:1.9rem; font-weight:600; line-height:1.2; margin:0.15rem 0 0.2rem 0;}
+.explica {font-size:0.95rem; margin:0;}
+/* Detalles dentro de la ficha: brechas y el texto original del reporte */
+.detalle {font-size:0.92rem; opacity:0.85; margin:-0.6rem 0 0.9rem 0;}
+ul.detalle {padding-left:1.2rem;}
+.cita {font-size:0.92rem; font-style:italic; opacity:0.85; border-left:3px solid rgba(128,128,128,0.5);
+       padding-left:0.6rem; margin:-0.6rem 0 0.9rem 0;}
+/* Barras horizontales de los problemas reportados (un solo color; el número va al lado de la barra) */
+.barras {display:grid; grid-template-columns:minmax(140px, 22rem) 1fr; gap:6px 12px; align-items:center; font-size:0.92rem;}
+.barra {display:flex; align-items:center; gap:8px;}
+.barra i {display:block; height:10px; border-radius:0 4px 4px 0; background:#2a78d6;}
+@media (prefers-color-scheme: dark) {.barra i {background:#3987e5;}}
 </style>""", unsafe_allow_html=True)
 
 def chip(estado, n=None):
@@ -109,18 +135,113 @@ def plural(n, palabra):
     n = int(n)
     return f"{n:,} {palabra}" if n == 1 else f"{n:,} {palabra}s"
 
+def porc(x):
+    """Porcentaje para mostrar. Antes: 0.293 | Después: '29 %'."""
+    return "sin dato" if pd.isna(x) else f"{100 * x:.0f} %"
+
+def meses(m):
+    return "1 mes" if int(m) == 1 else f"{int(m)} meses"
+
 def pie_de_pagina():
-    """PASO 5.6: Cómo se calcula el estado (transparencia) y fuente de los datos."""
-    with st.expander("¿Cómo se calcula el estado?"):
+    """PASO 5.6: Cómo se calculan el estado y los indicadores (transparencia) y fuente de los datos."""
+    with st.expander("¿Cómo se calculan el estado y los indicadores?"):
         st.markdown(
+            "**Estado de cada proyecto**\n"
             "- **Atrasado:** la fecha de término registrada ya pasó y el avance es menor a 95 %.\n"
             "- **En riesgo este año:** tiene presupuesto 2026 y lleva gastado menos de la mitad.\n"
             "- **Sin reportes recientes:** ya empezó, pero su último reporte de avance (formato 12-B) tiene más de 180 días.\n"
             "- **Por cerrar:** está prácticamente terminado (95 % o más) y falta el cierre formal.\n"
             "- **Sin presupuesto este año:** está aprobado, no ha empezado y no tiene presupuesto en 2026.\n"
             "- **En marcha:** ninguna de las anteriores.\n\n"
-            "El avance es el mayor entre el avance físico y el porcentaje gastado del costo. Reglas de ejemplo, por validar.")
+            "El avance es el mayor entre el avance físico y el porcentaje gastado del costo. Reglas de ejemplo, por validar.\n\n"
+            "**Indicadores de la cartera**\n"
+            "- **Brechas:** el vínculo que la entidad registró entre el proyecto y una brecha de servicio.\n"
+            "- **Falta gastar este año:** presupuesto 2026 menos lo ya gastado (devengado).\n"
+            "- **Cambio de costo:** costo actual frente al monto con que se aprobó el proyecto.\n"
+            "- **Problemas:** el último reporte de seguimiento (formato 12-B), clasificado por temas con palabras clave. "
+            "Son problemas que ya ocurren, no riesgos.\n"
+            "- **Financiamiento:** presupuesto 2026 o montos en la programación multianual (se toma su primer año como 2026).\n"
+            "- **Atraso:** meses desde la última fecha de fin registrada; frente al plan original puede ser mayor. "
+            "**Plan de gasto:** lo gastado de enero a octubre de 2026 frente a lo que la entidad planeó gastar en esos meses.")
     st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}.")
+
+def tarjeta(columna, pregunta, cifra, explicacion):
+    """Una tarjeta: la pregunta, una cifra grande y una frase que la explica."""
+    with columna.container(border=True):
+        st.markdown(f'<p class="pregunta">{pregunta}</p><p class="cifra">{cifra}</p><p class="explica">{explicacion}</p>',
+                    unsafe_allow_html=True)
+
+def tablero(clave, cartera):
+    """PASO 5.2a: los indicadores de cartera del Proceso 7 en seis tarjetas, con el mismo estilo de pregunta y respuesta.
+    Insumo: la fila de indicadores_cartera del ministerio elegido (o de la cartera completa) | Resultado: tarjetas y detalles."""
+    r = indicadores.loc[clave]
+    st.subheader("¿Cómo está la cartera?")
+    fila1, fila2 = st.columns(3), st.columns(3)
+
+    # P1: brechas
+    tarjeta(fila1[0], "¿A qué brechas apuntan?", porc(r["pct_con_brecha"]),
+            f"de los proyectos están vinculados a una brecha de servicio. Con dos o más brechas: {r['n_varias_brechas']:,.0f}.")
+
+    # P2: presupuesto 2026 que falta gastar
+    if r["pim_2026"] > 0:
+        tarjeta(fila1[1], "¿Cuánto falta gastar este año?", porc(r["pct_pendiente_2026"]),
+                f"del presupuesto 2026: {millones(r['pendiente_2026'])} de {millones(r['pim_2026'])}, y quedan {DIAS_AL_CIERRE} días. "
+                f"Con más de la mitad sin gastar: {plural(r['n_mas_mitad_pendiente'], 'proyecto')}.")
+    else:
+        tarjeta(fila1[1], "¿Cuánto falta gastar este año?", "—", "No tiene presupuesto 2026 registrado en estos datos.")
+
+    # P3: cambio de costo desde la aprobación
+    p = r["pct_desv_total"]
+    if pd.notna(p):
+        tarjeta(fila1[2], "¿Cuánto cambiaron los costos?", f"{'+' if p >= 0 else '−'}{abs(100 * p):.0f} %",
+                f"desde que se aprobaron: hoy cuestan {millones(abs(r['desv_total']))} {'más' if p >= 0 else 'menos'}. "
+                f"Subieron más de 20 %: {r['n_subio_mas_20']:,.0f}; más que duplicaron su costo: {r['n_mas_que_duplico']:,.0f}.")
+    else:
+        tarjeta(fila1[2], "¿Cuánto cambiaron los costos?", "—", "No hay montos para comparar.")
+
+    # P4: problemas del último reporte de seguimiento
+    con_problemas = cartera[cartera["clase_problema"] == "Reporta problemas"]
+    temas = con_problemas["temas"].str.split("; ").explode().value_counts()
+    comunes = temas.drop("Otros problemas", errors="ignore").head(3)
+    lista = ", ".join(f"{t.lower()} ({n:,})" for t, n in comunes.items())
+    tarjeta(fila2[0], "¿Qué problemas reportan?", f"{len(con_problemas):,}",
+            (f"proyectos reportan problemas en su último seguimiento. Los más comunes: {lista}." if lista
+             else "proyectos reportan problemas en su último seguimiento."))
+
+    # P5: financiamiento
+    tarjeta(fila2[1], "¿Tienen financiamiento?", porc(r["pct_n_presupuesto"]),
+            f"de los proyectos tienen presupuesto 2026. Programados para 2026 pero sin presupuesto: {r['n_prog_2026_sin_pim']:,.0f}; "
+            f"programados desde 2027: {r['n_prog_2027']:,.0f}. Sin presupuesto ni programación y con obra por hacer: "
+            f"{r['n_sin_fin_falta']:,.0f} ({millones(r['saldo_sin_fin_falta'])} por ejecutar).")
+
+    # P7: atraso y cumplimiento del plan de gasto
+    plan = (f" Entre enero y octubre gastaron el {porc(r['pct_cumple_programacion'])} de lo que planearon gastar."
+            if pd.notna(r["pct_cumple_programacion"]) else "")
+    if r["n_atrasados"] > 0:
+        tarjeta(fila2[2], "¿Cuánto atraso hay?", meses(r["mediana_meses_atraso"]),
+                f"es el atraso típico: la mitad de los {r['n_atrasados']:,.0f} atrasados lleva más que eso. "
+                f"Más de 3 años: {r['n_atraso_mas_36']:,.0f}.{plan}")
+    else:
+        tarjeta(fila2[2], "¿Cuánto atraso hay?", "0", f"proyectos atrasados.{plan}")
+
+    # Detalles a un clic: todos los temas de problemas y los cinco grupos de financiamiento
+    d1, d2 = st.columns(2)
+    with d1.expander("Ver todos los problemas reportados"):
+        if len(temas):
+            maximo = temas.max()
+            filas = "".join(f'<span>{html.escape(t)}</span><span class="barra" title="{html.escape(t)}: {n:,} proyectos">'
+                            f'<i style="width:{max(2, 85 * n / maximo):.0f}%"></i>{n:,}</span>' for t, n in temas.items())
+            st.markdown(f'<div class="barras">{filas}</div>', unsafe_allow_html=True)
+            st.caption("Un proyecto puede tener varios temas. Clasificación con palabras clave del último reporte de seguimiento.")
+        else:
+            st.write("Ningún proyecto reporta problemas.")
+    with d2.expander("Ver el detalle del financiamiento"):
+        grupos = [("Con presupuesto 2026", "con_pim"), ("Programado para 2026, sin presupuesto", "prog_2026_sin_pim"),
+                  ("Programado para 2027 en adelante", "prog_2027"), ("Sin financiamiento – le falta ejecutar", "sin_fin_falta"),
+                  ("Sin financiamiento – prácticamente terminado", "sin_fin_terminado")]
+        st.dataframe(pd.DataFrame([{"Grupo": g, "Proyectos": int(r[f"n_{k}"]), "Costo": millones(r[f"costo_{k}"]),
+                                    "Falta ejecutar": millones(r[f"saldo_{k}"])} for g, k in grupos]),
+                     hide_index=True, width="stretch")
 
 # ============================================================
 # PASO 5.2: Paso 1 de la página — elegir la cartera completa o un ministerio
@@ -144,6 +265,7 @@ c2.metric("Cuestan en total", millones(cartera["costo"].sum()))
 c3.metric("Atrasados", f"{(cartera['estado'] == 'Atrasado').sum():,}")
 st.markdown("".join(chip(e, int((cartera["estado"] == e).sum())) for e in sorted(ESTADOS, key=lambda e: ESTADOS[e][2])),
             unsafe_allow_html=True)
+tablero(sector, cartera)
 
 # ============================================================
 # PASO 5.2b: Cartera completa — estructura de desglose: "Cartera total" arriba y cada ministerio o entidad debajo,
@@ -153,6 +275,7 @@ st.markdown("".join(chip(e, int((cartera["estado"] == e).sum())) for e in sorted
 if sector == TODO:
     sectores = (inversiones.groupby("sector").agg(n=("id", "size"), costo=("costo", "sum"))
                 .sort_values("costo", ascending=False))
+    st.subheader("La cartera por ministerio o entidad")
     cajas = "".join(f'<div class="edt-caja"><b>{html.escape(NOMBRES.get(s.Index, s.Index.title()))}</b>'
                     f'<span>{plural(s.n, "proyecto")} · {millones(s.costo)}</span></div>' for s in sectores.itertuples())
     st.markdown(f'<div class="edt-raiz"><b>Cartera total</b><span>{plural(len(inversiones), "proyecto")} · '
@@ -213,15 +336,33 @@ vista = vista.assign(_orden=vista["estado"].map(lambda e: ESTADOS[e][2])).sort_v
 @st.dialog("Ficha del proyecto", width="large")
 def ficha(fila):
     st.markdown(chip(fila["estado"]) + f' <span style="color:#5b6068">{html.escape(fila["estado_motivo"])}</span>', unsafe_allow_html=True)
-    preguntas = [("¿Qué es?", f'{fila["que_es"]}. {fila["tipo_simple"]} en {fila["lugar"]}.'),
-                 ("¿Qué problema resuelve?", fila["problema"]),
-                 ("¿Cuánto cuesta y cuánto se ha gastado?", fila["cuanto"]),
-                 ("¿Cuándo termina?", fila["cuando"]),
-                 ("¿Cómo va?", f'{fila["estado"]}. {fila["estado_motivo"]}')]
+    texto = lambda col: fila[col] if isinstance(fila.get(col), str) else ""   # columnas del Proceso 7 (vacío si falta)
+
+    # Detalle bajo "¿Qué problema resuelve?" (P1): la frase y la lista de brechas a las que apunta
+    brechas = [b for b in texto("brechas_lista").split(" | ") if b]
+    detalle_brecha = f'<p class="detalle">{html.escape(texto("frase_brecha"))}</p>'
+    if brechas:
+        detalle_brecha = (f'<p class="detalle">{html.escape(texto("frase_brecha"))}</p><ul class="detalle">'
+                          + "".join(f"<li>{html.escape(b)}</li>" for b in brechas) + "</ul>")
+    # Detalle bajo "¿Qué problemas reporta?" (P4): el texto original del reporte, recortado
+    detalle_problema = ""
+    if texto("clase_problema") == "Reporta problemas" and texto("problema_12b"):
+        original = fila["problema_12b"] if len(fila["problema_12b"]) <= 300 else fila["problema_12b"][:297].rsplit(" ", 1)[0] + "…"
+        detalle_problema = f'<p class="cita">«{html.escape(original)}»</p>'
+
+    # (pregunta, respuesta, detalle opcional en HTML)
+    preguntas = [("¿Qué es?", f'{fila["que_es"]}. {fila["tipo_simple"]} en {fila["lugar"]}.', ""),
+                 ("¿Qué problema resuelve?", fila["problema"], detalle_brecha),
+                 ("¿Cuánto cuesta y cuánto se ha gastado?", f'{fila["cuanto"]} {texto("frase_costo")}'.strip(), ""),
+                 ("¿Tiene financiamiento?", texto("frase_dinero"), ""),
+                 ("¿Cuándo termina?", fila["cuando"], ""),
+                 ("¿Cómo va?", f'{fila["estado"]}. {fila["estado_motivo"]} {texto("frase_programacion")}'.strip(), ""),
+                 ("¿Qué problemas reporta?", texto("frase_problemas"), detalle_problema)]
     if fila["lo_que_frena"]:
-        preguntas.append(("¿Qué lo frena?", fila["lo_que_frena"]))
-    for pregunta, respuesta in preguntas:
-        st.markdown(f'<p class="pregunta">{pregunta}</p><p class="respuesta">{html.escape(respuesta)}</p>', unsafe_allow_html=True)
+        preguntas.append(("¿Qué lo frena?", fila["lo_que_frena"], ""))
+    for pregunta, respuesta, detalle in preguntas:
+        st.markdown(f'<p class="pregunta">{pregunta}</p><p class="respuesta">{html.escape(respuesta)}</p>{detalle}',
+                    unsafe_allow_html=True)
     st.caption("Resumen redactado con inteligencia artificial a partir de los datos del MEF; confírmalo en el detalle técnico antes de citarlo."
                if fila["redactado_por_ia"] else "Resumen elaborado automáticamente a partir de los datos del MEF.")
     if fila["cui"]:

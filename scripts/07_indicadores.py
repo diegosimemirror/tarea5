@@ -24,7 +24,13 @@ def millones(x):
     """Monto legible. Antes: 16302345678.9 | Después: 'S/ 16.3 mil millones'."""
     if pd.isna(x):
         return "sin dato"
-    return f"S/ {x / 1e9:,.1f} mil millones" if abs(x) >= 1e9 else f"S/ {x / 1e6:,.1f} millones"
+    if abs(x) >= 1e9:
+        return f"S/ {x / 1e9:,.1f} mil millones"
+    return f"S/ {x / 1e6:,.1f} millones" if abs(x) >= 1e6 else f"S/ {x / 1e3:,.0f} mil"
+
+def porc(x):
+    """Porcentaje al estilo de la app. Antes: 0.1 | Después: "10 %"."""
+    return f"{100 * x:.0f} %"
 
 def proporcion(a, b):
     """a / b, o faltante si b es 0 o falta (evita divisiones entre cero)."""
@@ -43,9 +49,12 @@ ind = inv[["id", "cui", "sector", "unidad", "tipo", "marco", "estado", "avance",
 #   Antes: una fila por inversión y brecha (17 119) | Después: por inversión, cuántas brechas y la lista de indicadores
 #   Si no tiene brecha, se explica el motivo más probable según su tipo y su marco normativo.
 # ============================================================
-lista = (brechas.assign(texto=brechas["indicador"] + " (aporta " + brechas["aporte"].map(lambda a: f"{a:,.0f}" if pd.notna(a) else "?")
-                        + " " + brechas["unidad_medida"].str.lower() + ")")
-         .groupby("cui").agg(n_brechas_total=("indicador", "size"), brechas_lista=("texto", " | ".join)).reset_index())
+# Texto para mostrar: "PORCENTAJE DE ..." -> "Porcentaje de ..."; el aporte solo si es mayor que 0
+#   Una misma brecha puede venir repetida (otro año u otro ámbito): se cuenta y se muestra una sola vez
+aporte = [f" (aporta {a:,.0f} {u.lower()})" if pd.notna(a) and a > 0 else "" for a, u in zip(brechas["aporte"], brechas["unidad_medida"])]
+lista = (brechas.assign(texto=brechas["indicador"].str.capitalize() + aporte)
+         .groupby("cui").agg(n_brechas_total=("indicador", "nunique"),
+                             brechas_lista=("texto", lambda s: " | ".join(dict.fromkeys(s)))).reset_index())
 ind = ind.merge(lista, on="cui", how="left")
 ind["n_brechas_total"] = ind["n_brechas_total"].fillna(0).astype(int)
 ind["tiene_brecha"] = ind["n_brechas_total"] > 0
@@ -119,7 +128,7 @@ texto = inv["problema_12b"].fillna("").str.lower()
 NADA = (r"^\W*(?:ningun[oa]?(?:\b|_)|ningún|nada\b|sin (?:problemas?|inconvenientes?|observaciones|restr?[ia]cci\w*|dificultades|novedad)|no aplica|n/?a\b)"
         r"|\bno (?:se )?(?:presenta\w*|present[oó]|han? presentado|registra\w*|identific\w*|evidencia\w*|tiene\w*|hay|existen?|reporta\w*|cuenta\w* con)"
         r"(?:\W*$|\W+(?:\w+\W+){0,3}?(?:problema|inconveniente|dificultad|restricci|observaci|riesgo|contratiempo))"
-        r"|conclu\w* al 100|culmin\w* al 100"
+        r"|conclu\w* al 100|culmin\w* al 100|^\W*se (?:culmin|conclu|termin)\w*"
         r"|^\W*(?:la |el )?(?:obra|inversi\w*|proyecto)?\s*(?:se encuentra |est[aá] |fue )?(?:culminad|concluid|terminad)\w*\W*$")
 inicio = texto.str[:100]
 dice_nada = inicio.str.contains(NADA, regex=True)
@@ -153,27 +162,42 @@ for col, tema, patron in TEMAS:
     # str.contains(): True si el texto menciona alguna de las palabras del tema. Antes: texto | Después: sí/no por tema
     ind[col] = reporta & texto.str.contains(patron, regex=True)
     columnas_tema.append((tema, col))
-ind["temas"] = ind.apply(lambda f: ", ".join(t for t, c in columnas_tema if f[c]), axis=1)
+ind["temas"] = ind.apply(lambda f: "; ".join(t for t, c in columnas_tema if f[c]), axis=1)
 ind.loc[reporta & (ind["temas"] == ""), "temas"] = "Otros problemas"
 print("7.5 P4 clases:", ind["clase_problema"].value_counts().to_dict())
 print("    temas:", {t: int(ind[c].sum()) for t, c in columnas_tema}, "| otros:", int((ind["temas"] == "Otros problemas").sum()))
 
 # ============================================================
 # P5 — PASO 7.6: ¿Tiene financiamiento?
-#   Con presupuesto 2026 (PIM > 0) > Solo programado para años siguientes (PMI_ANIO_1 a 4 > 0) > Sin financiamiento
-#   Dentro de "sin financiamiento" se separan los prácticamente terminados (avance >= 95 %), que ya no necesitan fondos.
+#   La programación multianual (PMI_ANIO_1 a 4) empieza, según la evidencia, en 2026: en el INSN San Borja (CUI 2547701)
+#   el año 1 es idéntico a su presupuesto 2026, y en toda la base el año 1 suma S/ 19,5 mil millones frente a
+#   S/ 16,3 mil millones de presupuesto 2026. Por eso: año 1 = 2026; años 2 a 4 = 2027 en adelante (sin confirmación oficial).
+#   Cinco grupos, en este orden de prioridad:
+#     1. Con presupuesto 2026 (PIM > 0)
+#     2. Programado para 2026, sin presupuesto (año 1 > 0 y PIM = 0): se planificó y no se financió
+#     3. Programado para 2027 en adelante (años 2 a 4 > 0)
+#     4 y 5. Sin financiamiento ni programación: se separan los prácticamente terminados (avance >= 95 %), que ya no lo necesitan
 # ============================================================
-pmi_futuro = inv[["pmi_1", "pmi_2", "pmi_3", "pmi_4"]].fillna(0).sum(axis=1)
-ind["programado_anios_siguientes"] = pmi_futuro
+GRUPOS_FIN = [("Con presupuesto 2026", "con_pim"), ("Programado para 2026, sin presupuesto", "prog_2026_sin_pim"),
+              ("Programado para 2027 en adelante", "prog_2027"), ("Sin financiamiento – le falta ejecutar", "sin_fin_falta"),
+              ("Sin financiamiento – prácticamente terminado", "sin_fin_terminado")]
+NIVEL_FIN = {GRUPOS_FIN[0][0]: "Con presupuesto 2026", GRUPOS_FIN[1][0]: "Programado, sin presupuesto",
+             GRUPOS_FIN[2][0]: "Programado, sin presupuesto", GRUPOS_FIN[3][0]: "Sin financiamiento ni programación",
+             GRUPOS_FIN[4][0]: "Sin financiamiento ni programación"}
+ind["programado_pmi_2026"] = inv["pmi_1"].fillna(0)
+ind["programado_pmi_desde_2027"] = inv[["pmi_2", "pmi_3", "pmi_4"]].fillna(0).sum(axis=1)
 
-def financiamiento(f, futuro):
-    if f["pim_2026"] > 0:
-        return "Con presupuesto 2026"
-    if futuro > 0:
-        return "Solo programado para años siguientes"
-    return "Sin financiamiento – prácticamente terminado" if f["avance"] >= 95 else "Sin financiamiento – le falta ejecutar"
-ind["financiamiento"] = [financiamiento(f, fut) for (_, f), fut in zip(ind.iterrows(), pmi_futuro)]
-ind["con_financiamiento"] = ind["financiamiento"].isin(["Con presupuesto 2026", "Solo programado para años siguientes"])
+def financiamiento(pim, pmi_2026, pmi_2027, avance):
+    if pim > 0:
+        return GRUPOS_FIN[0][0]
+    if pmi_2026 > 0:
+        return GRUPOS_FIN[1][0]
+    if pmi_2027 > 0:
+        return GRUPOS_FIN[2][0]
+    return GRUPOS_FIN[4][0] if avance >= 95 else GRUPOS_FIN[3][0]
+ind["financiamiento"] = [financiamiento(*v) for v in
+                         zip(ind["pim_2026"], ind["programado_pmi_2026"], ind["programado_pmi_desde_2027"], ind["avance"])]
+ind["nivel_financiamiento"] = ind["financiamiento"].map(NIVEL_FIN)
 print("7.6 P5:", ind["financiamiento"].value_counts().to_dict())
 
 # ============================================================
@@ -209,6 +233,75 @@ ind["rango_programacion"] = pd.cut(ind["pct_cumple_programacion"], [-0.01, 0.7, 
                                    labels=["Gastó menos del 70 % de lo programado", "Gastó entre 70 % y 90 %",
                                            "Gastó 90 % o más"]).astype(str).replace("nan", "Sin programación mensual")
 print("7.7 P7 rangos de atraso:", ind["rango_atraso"].value_counts().to_dict())
+
+# ============================================================
+# PASO 7.7b: Frases en lenguaje simple para la ficha de cada proyecto (las muestra la app, Proceso 5)
+#   Antes: números (pim_2026 = 681092, pct_pendiente_2026 = 0.0) | Después: "Sí. Tiene S/ 681 mil de presupuesto 2026 y ya lo gastó todo."
+# ============================================================
+def frase_brecha(f):
+    if f["tiene_brecha"]:
+        return "Apunta a 1 brecha registrada:" if f["n_brechas_total"] == 1 else f"Apunta a {f['n_brechas_total']} brechas registradas:"
+    motivos = {"Reconstrucción (IRI)": "es una reconstrucción, que no se vincula a brechas",
+               "Proyecto del antiguo SNIP (anterior a las brechas)": "es un proyecto anterior al sistema de brechas",
+               "Inversión menor (IOARR)": "es una inversión menor de reposición o equipamiento"}
+    return f"No tiene brecha registrada: {motivos.get(f['motivo_sin_brecha'], 'la entidad no la registró')}."
+
+def frase_costo(f):
+    """P3: cuánto cambió el costo desde que se aprobó, y laudos si los hay."""
+    partes = []
+    p = f["pct_desv_total"]
+    if pd.notna(p) and p > 0.001:
+        partes.append(f"Cuando se aprobó costaba {millones(f['viable'])}: subió {porc(p)}.")
+    elif pd.notna(p) and p < -0.001:
+        partes.append(f"Cuando se aprobó costaba {millones(f['viable'])}: bajó {porc(-p)}.")
+    if f["laudo"] > 0:
+        partes.append(f"Tiene laudos arbitrales por {millones(f['laudo'])}.")
+    return " ".join(partes)
+
+def frase_dinero(f):
+    """P2 + P5: si tiene dinero este año, cuánto le falta gastar y cuánto le falta en total."""
+    g = f["financiamiento"]
+    if g == GRUPOS_FIN[0][0]:
+        pend = f["pct_pendiente_2026"]
+        resto = "ya lo gastó todo" if pend < 0.005 else f"le falta gastar el {porc(pend)} ({millones(f['pendiente_2026'])})"
+        t = f"Sí. Tiene {millones(f['pim_2026'])} de presupuesto 2026 y {resto}."
+    elif g == GRUPOS_FIN[1][0]:
+        t = f"No. Estaba programado para 2026 ({millones(f['programado_pmi_2026'])}), pero no recibió presupuesto."
+    elif g == GRUPOS_FIN[2][0]:
+        t = f"Todavía no. Está programado desde 2027 ({millones(f['programado_pmi_desde_2027'])})."
+    elif g == GRUPOS_FIN[3][0]:
+        return f"No. No tiene presupuesto 2026 ni está programado, y le falta ejecutar {millones(f['saldo_total'])}."
+    else:
+        return "No lo necesita: está prácticamente terminado."
+    if pd.notna(f["pct_saldo_total"]) and f["pct_saldo_total"] > 0.005:
+        t += f" En total, le falta ejecutar el {porc(f['pct_saldo_total'])} de su costo."
+    return t
+
+def frase_problemas(f, fecha):
+    """P4: qué dice su último reporte de seguimiento (12-B)."""
+    c = f["clase_problema"]
+    if c == "Sin reporte de seguimiento":
+        return "La entidad no ha registrado reportes de seguimiento."
+    cuando_ = f"Según su último reporte ({fecha:%d/%m/%Y})"
+    if c == "Dice que no hay problemas":
+        return f"{cuando_}, no tiene problemas."
+    if c == "Sin texto de problemas":
+        return f"{cuando_}, no describe problemas."
+    if f["temas"] == "Otros problemas":
+        return f"{cuando_}, tiene este problema:"
+    return f"{cuando_}, sus problemas son de: {f['temas'].lower()}."
+
+def frase_programacion(f):
+    """P7, complemento: cumplimiento de su propio plan de gasto mensual de 2026."""
+    p = f["pct_cumple_programacion"]
+    return "" if pd.isna(p) else f"De enero a octubre de 2026 gastó el {porc(p)} de lo que planeó gastar."
+
+ind["frase_brecha"] = ind.apply(frase_brecha, axis=1)
+ind["frase_costo"] = ind.apply(frase_costo, axis=1)
+ind["frase_dinero"] = ind.apply(frase_dinero, axis=1)
+ind["frase_problemas"] = [frase_problemas(f, fecha) for (_, f), fecha in zip(ind.iterrows(), inv["fecha_12b"])]
+ind["frase_programacion"] = ind.apply(frase_programacion, axis=1)
+print("7.7b Ejemplo (INSN San Borja, 2547701):", ind.loc[ind["cui"] == "2547701", ["frase_dinero", "frase_costo", "frase_problemas"]].iloc[0].tolist())
 
 # ============================================================
 # PASO 7.8: Resumir por ministerio o entidad y para la cartera completa
@@ -248,14 +341,15 @@ def resumen(g):
         "n_bajo_70_programacion": int((g["pct_cumple_programacion"] < 0.7).sum()),
     }
     fila["pct_cumple_programacion"] = proporcion(fila["devengado_ene_oct"], fila["programado_ene_oct"])
-    # P5: tres grupos con su número, costo y saldo
-    for grupo, clave in [("Con presupuesto 2026", "con_pim"), ("Solo programado para años siguientes", "solo_programado"),
-                         ("Sin financiamiento – le falta ejecutar", "sin_fin_falta"),
-                         ("Sin financiamiento – prácticamente terminado", "sin_fin_terminado")]:
+    # P5: los cinco grupos con su número, costo y saldo; y los tres niveles en porcentaje de proyectos y de costo
+    for grupo, clave in GRUPOS_FIN:
         m = g["financiamiento"] == grupo
         fila[f"n_{clave}"], fila[f"costo_{clave}"], fila[f"saldo_{clave}"] = int(m.sum()), g.loc[m, "costo"].sum(), g.loc[m, "saldo_total"].sum()
-    fila["pct_n_con_financiamiento"] = g["con_financiamiento"].mean()
-    fila["pct_costo_con_financiamiento"] = proporcion(g.loc[g["con_financiamiento"], "costo"].sum(), g["costo"].sum())
+    for nivel, clave in [("Con presupuesto 2026", "presupuesto"), ("Programado, sin presupuesto", "programado"),
+                         ("Sin financiamiento ni programación", "sin_nada")]:
+        m = g["nivel_financiamiento"] == nivel
+        fila[f"pct_n_{clave}"] = m.mean()
+        fila[f"pct_costo_{clave}"] = proporcion(g.loc[m, "costo"].sum(), g["costo"].sum())
     return pd.Series(fila)
 
 por_sector = ind.groupby("sector").apply(resumen, include_groups=False)
@@ -310,10 +404,10 @@ lineas = [
     f"| Otros problemas (ningún tema reconocido) | {n((ind['temas'] == 'Otros problemas').sum())} |", "",
     "### P5. Financiamiento", "",
     "| Grupo | Inversiones | Costo | Saldo por ejecutar |", "|---|---:|---:|---:|",
-    *[f"| {g} | {n(t['n_' + k])} | {millones(t['costo_' + k])} | {millones(t['saldo_' + k])} |" for g, k in [
-        ("Con presupuesto 2026", "con_pim"), ("Solo programado para años siguientes", "solo_programado"),
-        ("Sin financiamiento – le falta ejecutar", "sin_fin_falta"), ("Sin financiamiento – prácticamente terminado", "sin_fin_terminado")]],
-    "", f"Con financiamiento (las dos primeras filas): **{pct(t['pct_n_con_financiamiento'])} de las inversiones y {pct(t['pct_costo_con_financiamiento'])} del costo**.", "",
+    *[f"| {g} | {n(t['n_' + k])} | {millones(t['costo_' + k])} | {millones(t['saldo_' + k])} |" for g, k in GRUPOS_FIN],
+    "", f"- **Con presupuesto 2026:** {pct(t['pct_n_presupuesto'])} de las inversiones y {pct(t['pct_costo_presupuesto'])} del costo.",
+    f"- **Programadas, pero sin presupuesto:** {pct(t['pct_n_programado'])} de las inversiones y {pct(t['pct_costo_programado'])} del costo.",
+    f"- **Sin financiamiento ni programación:** {pct(t['pct_n_sin_nada'])} de las inversiones y {pct(t['pct_costo_sin_nada'])} del costo.", "",
     "### P7. Atraso",
     f"- Atrasadas: **{n(t['n_atrasados'])}**; mediana de **{t['mediana_meses_atraso']:.0f} meses**; más de 1 año: {n(t['n_atraso_mas_12'])}; "
     f"más de 3 años: **{n(t['n_atraso_mas_36'])}**.",
@@ -321,7 +415,7 @@ lineas = [
     f"- Programación 2026 (12-B): de enero a octubre se programó {millones(t['programado_ene_oct'])} y se gastó "
     f"{millones(t['devengado_ene_oct'])} (**{pct(t['pct_cumple_programacion'])}**). {n(t['n_bajo_70_programacion'])} inversiones gastaron menos del 70 % de lo programado.", "",
     "## Por ministerio o entidad (de mayor a menor costo)", "",
-    "| Ministerio o entidad | Inversiones | Costo | Con brecha | Falta gastar 2026 | Desviación del costo | Reportan problemas | Con financiamiento | Atrasadas (mediana) |",
+    "| Ministerio o entidad | Inversiones | Costo | Con brecha | Falta gastar 2026 | Desviación del costo | Reportan problemas | Con presupuesto 2026 | Atrasadas (mediana) |",
     "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
 ]
 for _, f in cartera[cartera["sector"] != TODO].sort_values("costo", ascending=False).iterrows():
@@ -329,7 +423,7 @@ for _, f in cartera[cartera["sector"] != TODO].sort_values("costo", ascending=Fa
     nombre = " ".join(p if i == 0 or p not in ("Y", "De", "Del", "La", "E") else p.lower()
                       for i, p in enumerate(f["sector"].title().split()))   # "Desarrollo E Inclusion" -> "Desarrollo e Inclusion"
     lineas.append(f"| {nombre} | {n(f['n'])} | {millones(f['costo'])} | {pct(f['pct_con_brecha'])} | {pct(f['pct_pendiente_2026'])} "
-                  f"| {pct(f['pct_desv_total'])} | {n(f['n_reporta_problemas'])} | {pct(f['pct_n_con_financiamiento'])} | {n(f['n_atrasados'])} ({mediana}) |")
+                  f"| {pct(f['pct_desv_total'])} | {n(f['n_reporta_problemas'])} | {pct(f['pct_n_presupuesto'])} | {n(f['n_atrasados'])} ({mediana}) |")
 lineas += ["", "## Definiciones y advertencias", "",
            "- **Fuentes:** Detalle de inversiones, Inversiones y brechas y Formato 12-B (MEF, Datos Abiertos). El diccionario del MEF da error 404: "
            "el significado de algunas columnas (programación mensual del 12-B, `PMI_ANIO_1` a `4`) se dedujo de su nombre.",
@@ -337,7 +431,8 @@ lineas += ["", "## Definiciones y advertencias", "",
            "- **P3:** solo inversiones con monto viable y costo actualizado mayores que 0. Desviación = costo actualizado − monto viable.",
            "- **P4:** reglas de palabras sobre el último texto de problemas del 12-B; son aproximadas y es lo que la entidad reporta. "
            "Son problemas actuales, no riesgos con probabilidad e impacto.",
-           "- **P5:** \"programado para años siguientes\" = suma de `PMI_ANIO_1` a `PMI_ANIO_4` mayor que 0. La fuente del dinero no está en estos archivos.",
+           "- **P5:** `PMI_ANIO_1` se toma como 2026 y `PMI_ANIO_2` a `4` como 2027 en adelante (evidencia: en el INSN San Borja, CUI 2547701, "
+           "el año 1 es igual a su presupuesto 2026; sin confirmación oficial). La fuente del dinero no está en estos archivos.",
            "- **P7:** atraso = meses desde la fecha de fin registrada, si ya pasó y el avance es menor a 95 %. "
            "Programación mensual: devengado de enero a octubre ÷ lo programado para esos meses."]
 (DOCS / "indicadores_resultados.md").write_text("\n".join(lineas) + "\n", encoding="utf-8")
