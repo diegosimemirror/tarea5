@@ -28,7 +28,7 @@ Busco facilitar la comunicación de información densa para la toma de decisione
   - **11 de noviembre de 2026, un especialista en inversión pública revisa la app** ([nota 3](docs/research/03_conversacion.md)):
     - pide usar el término oficial ("costo total") y aclarar tres etiquetas: "programación desde 2027", "costo duplicado o más" y "expediente técnico";
     - no encontró los hospitales de Chupaca y Antonio Lorena, que son obras de gobiernos regionales y no están en esta versión.
-  - **11 de noviembre de 2026, una revisora externa** ([nota 4](docs/research/04_conversacion.md)): pide ordenar la cartera como la estructura presupuestal (nivel de gobierno → sector → pliego → unidad ejecutora → inversión). Hoy la app se salta el pliego.
+  - **11 de noviembre de 2026, una especialista en inversiones del Estado** ([nota 4](docs/research/04_conversacion.md)): pide ordenar la cartera como la estructura presupuestal (nivel de gobierno → sector → pliego → unidad ejecutora → inversión). Hoy la app se salta el pliego.
 
 ## 4. Solución e insight
 

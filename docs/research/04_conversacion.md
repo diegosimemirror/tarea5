@@ -3,7 +3,7 @@
 > Revisión de la versión publicada el 11/11/2026. Lo que sigue es un resumen del founder.
 
 - **Fecha:** 11 de noviembre de 2026
-- **Rol de la persona** (sin nombre): revisora externa de la app
+- **Rol de la persona** (sin nombre): especialista en inversiones del Estado
 - **Medio:** revisión de la app pública
 
 ## 1 y 2. Cómo lo hace hoy y qué le costó
