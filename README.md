@@ -22,10 +22,13 @@ Busco facilitar la comunicación de información densa para la toma de decisione
   - Los informes de seguimiento son textos largos que no dejan ver el conjunto.
 - **Cuánto pesa:** el gobierno nacional tiene **12 731 inversiones activas por S/ 621 mil millones**. Con nuestras reglas, **3 631 están atrasadas** según sus propias fechas registradas.
 - **Cómo lo resuelven hoy:** abren el SSI ficha por ficha, piden un Excel a la OPMI o leen informes.
-- **Evidencia:** notas de 3 conversaciones en [`docs/research/`](docs/research/). Las dos primeras son anteriores a la app y están reconstruidas de memoria:
+- **Evidencia:** notas de 4 conversaciones en [`docs/research/`](docs/research/). Las dos primeras son anteriores a la app y están reconstruidas de memoria; las dos últimas son revisiones de la app:
   - **Noviembre–diciembre de 2019, asesores de la OPMI de un ministerio del sector salud** ([nota 1](docs/research/01_conversacion.md)): para seguir las obras del Bicentenario era difícil tener al día una matriz con ejecución, ubicación, problemas y riesgos.
   - **Julio de 2023, la banca multilateral con la alta dirección de un ministerio del sector salud** ([nota 2](docs/research/02_conversacion.md)): lo primero que pidió fue una cartera de proyectos visible y ordenable por temas. No se pudo mostrar en la reunión: se armó después, en Excel que se actualizaban uno sobre otro.
-  - **Conversación 3, con la app:** **POR COMPLETAR.**
+  - **11 de noviembre de 2026, un especialista en inversión pública revisa la app** ([nota 3](docs/research/03_conversacion.md)):
+    - pide usar el término oficial ("costo total") y aclarar tres etiquetas: "programación desde 2027", "costo duplicado o más" y "expediente técnico";
+    - no encontró los hospitales de Chupaca y Antonio Lorena, que son obras de gobiernos regionales y no están en esta versión.
+  - **11 de noviembre de 2026, una revisora externa** ([nota 4](docs/research/04_conversacion.md)): pide ordenar la cartera como la estructura presupuestal (nivel de gobierno → sector → pliego → unidad ejecutora → inversión). Hoy la app se salta el pliego.
 
 ## 4. Solución e insight
 
@@ -93,7 +96,7 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 **Por qué ese precio:**
 - **Hoy la cartera la arma un especialista a mano.** Supuesto: gana S/ 7 000 al mes y dedica una semana al mes a armarla, unos S/ 1 750 mensuales. El precio es casi cinco veces menor.
 - **El monto anual es pequeño para una entidad.** Hay que verificar en la Ley 32069 el umbral para contrataciones menores.
-- **Supuestos por validar** en la conversación 3.
+- **Supuestos por validar:** las conversaciones 3 y 4 revisaron la app, no el precio.
 
 **Mercado:** **2 020 entidades** tienen hoy inversiones activas: 184 del gobierno nacional, 30 regionales y 1 806 locales (MEF, 08/11/2026). Si todas pagaran, serían US$ 2,4 millones al año.
 
