@@ -10,7 +10,9 @@ Simplificamos la lectura de cómo van los proyectos de inversión del Estado per
 
 ## 2. Founder
 
-**POR COMPLETAR (Diego).** Quién soy y por qué soy la persona indicada. Ideas para confirmar: gestor público, PMP, experiencia en inversión pública y en cooperación (MIDIS, EsSalud), y haber visto de cerca que un ministerio no siempre tiene a mano el Excel completo de sus proyectos.
+**Diego Sime, MA.** Gestor público y Project Management Professional (PMP). Participo en la Diplomatura de Especialización en Ciencia de Datos para las Ciencias Sociales y la Gestión Pública (Q-Lab PUCP).
+
+Busco facilitar la comunicación de información densa para la toma de decisiones.
 
 ## 3. Problema
 
