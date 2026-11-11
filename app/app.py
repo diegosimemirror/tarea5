@@ -113,8 +113,11 @@ st.markdown("""
 .edt-raiz b, .edt-caja b {display:block;}
 .edt-raiz span, .edt-caja span {opacity:0.75;}
 /* Tarjetas de indicadores: una pregunta, una cifra y una frase */
-.cifra {font-size:1.9rem; font-weight:600; line-height:1.2; margin:0.15rem 0 0.2rem 0;}
+div[data-testid="stMarkdownContainer"] p.cifra {font-size:2rem; font-weight:700; line-height:1.15; margin:0.15rem 0 0.1rem 0;}
 .explica {font-size:0.95rem; margin:0;}
+div[data-testid="stMarkdownContainer"] p.rotulo {font-size:0.9rem; opacity:0.8; margin:0 0 0.35rem 0;}
+ul.lineas {font-size:0.9rem; margin:0; padding-left:1.1rem;}
+ul.lineas li {margin:0 0 0.15rem 0;}
 /* Detalles dentro de la ficha: brechas y el texto original del reporte */
 .detalle {font-size:0.92rem; opacity:0.85; margin:-0.6rem 0 0.9rem 0;}
 ul.detalle {padding-left:1.2rem;}
@@ -184,11 +187,24 @@ def pie_de_pagina():
             "**Plan de gasto:** lo gastado de enero a octubre de 2026 frente a lo que la entidad planeó gastar en esos meses.")
     st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}.")
 
-def tarjeta(columna, pregunta, cifra, explicacion):
-    """Una tarjeta: la pregunta, una cifra grande y una frase que la explica."""
+def tarjeta(columna, pregunta, cifra, rotulo, lineas=()):
+    """Una tarjeta de lectura rápida: la pregunta, una cifra grande con una etiqueta corta, y hasta 3 líneas que
+    empiezan con su número. Cada línea es (número, texto). Antes: un párrafo | Después: cifras primero, texto después."""
+    filas = "".join(f"<li><b>{html.escape(str(n))}</b> {html.escape(t)}</li>" for n, t in lineas)
     with columna.container(border=True):
-        st.markdown(f'<p class="pregunta">{pregunta}</p><p class="cifra">{cifra}</p><p class="explica">{explicacion}</p>',
-                    unsafe_allow_html=True)
+        st.markdown(f'<p class="pregunta">{pregunta}</p><p class="cifra">{cifra}</p><p class="rotulo">{rotulo}</p>'
+                    + (f'<ul class="lineas">{filas}</ul>' if filas else ""), unsafe_allow_html=True)
+
+# Nombres cortos de los temas de problemas, para las tarjetas
+TEMA_CORTO = {"Presupuesto o financiamiento": "presupuesto", "Liquidación o cierre pendiente": "liquidación o cierre",
+              "Permisos, trámites o pronunciamientos de otras entidades": "permisos y trámites",
+              "Expediente técnico o estudios": "expediente técnico", "Documentos o información pendiente": "documentos pendientes",
+              "Contratista o contrato": "contratista", "Arbitraje o controversias": "arbitraje", "Proceso de contratación": "contratación",
+              "Aún no programada o en espera de inicio": "en espera de inicio", "Terreno o saneamiento legal": "terreno",
+              "Obra paralizada o suspendida": "obra paralizada", "Adicionales o ampliación de plazo": "adicionales o ampliación",
+              "Clima o desastres": "clima o desastres", "Conflictos sociales": "conflictos sociales",
+              "Observaciones de control (Contraloría)": "Contraloría"}
+n_ = lambda x: f"{int(x):,}"   # número entero con separador de miles
 
 def tablero(clave, cartera):
     """PASO 5.2a: los indicadores de cartera del Proceso 7 en seis tarjetas, con el mismo estilo de pregunta y respuesta.
@@ -197,61 +213,60 @@ def tablero(clave, cartera):
     st.subheader("¿Cómo está la cartera?")
     fila1, fila2 = st.columns(4), st.columns(3)
 
-    # Avance frente a gasto (aproximación al valor ganado): solo proyectos con avance declarado en 2026
-    if r["n_comparables_avance"] > 0:
-        indice = f"{r['indice_avance_gasto']:.2f}".replace(".", ",")
-        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", f"{r['n_alerta_gasto_avance']:,.0f}",
-                f"proyectos gastaron 30 puntos o más por encima del avance que declaran. En los {r['n_comparables_avance']:,.0f} "
-                f"que declararon su avance en 2026: avance {porc(r['pct_avance_declarado'])}, gastado {porc(r['pct_gastado_comparable'])}; "
-                f"por cada sol gastado, un avance de S/ {indice}.")
-    else:
-        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", "—", "Ningún proyecto declaró su avance en 2026.")
-
     # P1: brechas
-    tarjeta(fila1[0], "¿A qué brechas apuntan?", porc(r["pct_con_brecha"]),
-            f"de los proyectos están vinculados a una brecha de servicio. Con dos o más brechas: {r['n_varias_brechas']:,.0f}.")
+    tarjeta(fila1[0], "¿A qué brechas apuntan?", porc(r["pct_con_brecha"]), "de los proyectos con brecha registrada",
+            [(n_(r["n_varias_brechas"]), "con dos o más brechas")])
 
     # P2: presupuesto 2026 que falta gastar
     if r["pim_2026"] > 0:
-        tarjeta(fila1[1], "¿Cuánto falta gastar este año?", porc(r["pct_pendiente_2026"]),
-                f"del presupuesto 2026: {millones(r['pendiente_2026'])} de {millones(r['pim_2026'])}, y quedan {DIAS_AL_CIERRE} días. "
-                f"Con más de la mitad sin gastar: {plural(r['n_mas_mitad_pendiente'], 'proyecto')}.")
+        tarjeta(fila1[1], "¿Cuánto falta gastar este año?", porc(r["pct_pendiente_2026"]), "del presupuesto 2026 sin gastar",
+                [(millones(r["pendiente_2026"]), f"de {millones(r['pim_2026'])}"),
+                 (n_(DIAS_AL_CIERRE), "días para cerrar el año"),
+                 (n_(r["n_mas_mitad_pendiente"]), "con más de la mitad sin gastar")])
     else:
-        tarjeta(fila1[1], "¿Cuánto falta gastar este año?", "—", "No tiene presupuesto 2026 registrado en estos datos.")
+        tarjeta(fila1[1], "¿Cuánto falta gastar este año?", "—", "sin presupuesto 2026 en estos datos")
 
     # P3: cambio de costo desde la aprobación
     p = r["pct_desv_total"]
     if pd.notna(p):
-        tarjeta(fila1[2], "¿Cuánto cambiaron los costos?", f"{'+' if p >= 0 else '−'}{abs(100 * p):.0f} %",
-                f"desde que se aprobaron: hoy cuestan {millones(abs(r['desv_total']))} {'más' if p >= 0 else 'menos'}. "
-                f"Subieron más de 20 %: {r['n_subio_mas_20']:,.0f}; más que duplicaron su costo: {r['n_mas_que_duplico']:,.0f}.")
+        tarjeta(fila1[2], "¿Cuánto cambiaron los costos?", f"{'+' if p >= 0 else '−'}{abs(100 * p):.0f} %", "desde que se aprobaron",
+                [(millones(abs(r["desv_total"])), "más" if p >= 0 else "menos"),
+                 (n_(r["n_subio_mas_20"]), "con alza de más de 20 %"),
+                 (n_(r["n_mas_que_duplico"]), "con costo duplicado o más")])
     else:
-        tarjeta(fila1[2], "¿Cuánto cambiaron los costos?", "—", "No hay montos para comparar.")
+        tarjeta(fila1[2], "¿Cuánto cambiaron los costos?", "—", "sin montos para comparar")
 
-    # P4: problemas del último reporte de seguimiento
+    # Avance frente a gasto (aproximación al valor ganado): solo proyectos con avance declarado en 2026
+    if r["n_comparables_avance"] > 0:
+        indice = f"{r['indice_avance_gasto']:.2f}".replace(".", ",")
+        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", n_(r["n_alerta_gasto_avance"]),
+                "con gasto 30 puntos por encima del avance",
+                [(f"S/ {indice}", "de avance por cada sol gastado"),
+                 (n_(r["n_comparables_avance"]), "con avance declarado en 2026")])
+    else:
+        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", "—", "nadie declaró su avance en 2026")
+
+    # P4: problemas del último reporte de seguimiento (los 3 temas más comunes, con nombre corto)
     con_problemas = cartera[cartera["clase_problema"] == "Reporta problemas"]
     temas = con_problemas["temas"].str.split("; ").explode().value_counts()
     comunes = temas.drop("Otros problemas", errors="ignore").head(3)
-    lista = ", ".join(f"{t.lower()} ({n:,})" for t, n in comunes.items())
-    tarjeta(fila2[0], "¿Qué problemas reportan?", f"{len(con_problemas):,}",
-            (f"proyectos reportan problemas en su último seguimiento. Los más comunes: {lista}." if lista
-             else "proyectos reportan problemas en su último seguimiento."))
+    tarjeta(fila2[0], "¿Qué problemas reportan?", n_(len(con_problemas)), "con problemas reportados",
+            [(n_(k), TEMA_CORTO.get(t, t.lower())) for t, k in comunes.items()])
 
     # P5: financiamiento
-    tarjeta(fila2[1], "¿Tienen financiamiento?", porc(r["pct_n_presupuesto"]),
-            f"de los proyectos tienen presupuesto 2026. Programados para 2026 pero sin presupuesto: {r['n_prog_2026_sin_pim']:,.0f}; "
-            f"programados desde 2027: {r['n_prog_2027']:,.0f}. Sin presupuesto ni programación y con obra por hacer: "
-            f"{r['n_sin_fin_falta']:,.0f} ({millones(r['saldo_sin_fin_falta'])} por ejecutar).")
+    tarjeta(fila2[1], "¿Tienen financiamiento?", porc(r["pct_n_presupuesto"]), "con presupuesto 2026",
+            [(n_(r["n_prog_2026_sin_pim"]), "con programación 2026, pero sin presupuesto"),
+             (n_(r["n_prog_2027"]), "con programación desde 2027"),
+             (n_(r["n_sin_fin_falta"]), f"sin presupuesto ni programación · {millones(r['saldo_sin_fin_falta'])} por ejecutar")])
 
     # P7: atraso y cumplimiento del plan de gasto
-    plan = (f" Entre enero y octubre gastaron el {porc(r['pct_cumple_programacion'])} de lo que planearon gastar."
-            if pd.notna(r["pct_cumple_programacion"]) else "")
+    plan = ([(porc(r["pct_cumple_programacion"]), "de lo planeado gastado (ene–oct)")]
+            if pd.notna(r["pct_cumple_programacion"]) else [])
     if r["n_atrasados"] > 0:
-        tarjeta(fila2[2], "¿Cuánto atraso hay?", meses(r["mediana_meses_atraso"]),
-                f"es el atraso típico: la mitad de los {r['n_atrasados']:,.0f} atrasados lleva más que eso. "
-                f"Más de 3 años: {r['n_atraso_mas_36']:,.0f}.{plan}")
+        tarjeta(fila2[2], "¿Cuánto atraso hay?", meses(r["mediana_meses_atraso"]), f"atraso típico de los {n_(r['n_atrasados'])} atrasados",
+                [(n_(r["n_atraso_mas_36"]), "con más de 3 años")] + plan)
     else:
-        tarjeta(fila2[2], "¿Cuánto atraso hay?", "0", f"proyectos atrasados.{plan}")
+        tarjeta(fila2[2], "¿Cuánto atraso hay?", "0", "proyectos atrasados", plan)
 
     # Detalles a un clic: todos los temas de problemas y los cinco grupos de financiamiento
     d1, d2 = st.columns(2)
