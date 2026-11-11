@@ -60,6 +60,8 @@
 - **Sin financiamiento ni programación:** 59% de las inversiones y 30% del costo.
 
 ### Avance frente a gasto (aproximación al valor ganado)
+**No se muestra en la app** (decisión del 11/11/2026): el avance es autodeclarado y el 49 % de los proyectos comparables declara un avance igual a lo gastado, así que la comparación no es confiable.
+
 - El avance que usa la app sale de la **declaración de la entidad** en 4 219 proyectos; en el resto, de lo gastado.
 - Comparables en la misma fecha (avance declarado en 2026): **4 165**. En ellos, el avance declarado es **46%** y lo gastado a esa fecha **44%** del costo: por cada sol gastado se declara un avance de **S/ 1.05**.
 - Con lo gastado 30 puntos o más por encima del avance declarado: **73** proyectos.

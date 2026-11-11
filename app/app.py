@@ -189,9 +189,7 @@ def pie_de_pagina():
             "- **Problemas:** el último reporte de seguimiento (formato 12-B), clasificado por temas con palabras clave. "
             "Son problemas que ya ocurren, no riesgos.\n"
             "- **Financiamiento:** presupuesto 2026 o montos en la programación multianual (se toma su primer año como 2026).\n"
-            "- **Avance y gasto:** el avance lo declara la entidad (\"toda la inversión\" incluye gestión, expediente técnico, "
-            "supervisión y liquidación; \"solo obra y equipos\", no). El gasto es lo devengado. Para compararlos se usa lo gastado "
-            "hasta el mes de la declaración. Se parece al valor ganado, pero el avance es autodeclarado y el gasto incluye adelantos.\n"
+            "- **Ejecución:** lo devengado en 2026 frente al presupuesto 2026, y lo devengado en toda su vida frente a su costo.\n"
             "- **Atraso:** meses desde la última fecha de fin registrada; frente al plan original puede ser mayor. "
             "**Plan de gasto:** lo gastado de enero a octubre de 2026 frente a lo que la entidad planeó gastar en esos meses.")
     st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}.")
@@ -220,8 +218,8 @@ def tablero(clave, cartera):
     Insumo: la fila de indicadores_cartera del ministerio elegido (o de la cartera completa) | Resultado: tarjetas y detalles."""
     r = indicadores.loc[clave]
     st.subheader("¿Cómo está la cartera?")
-    # Seis tarjetas en dos filas de tres (las brechas van solo en su desplegable, "Ver todas las brechas que abordan")
-    fila1, fila2 = st.columns(3), st.columns(3)
+    # Cinco tarjetas: tres arriba (presupuesto, costos, financiamiento) y dos abajo (problemas, atraso)
+    fila1, fila2 = st.columns(3), st.columns(2)
 
     # P1: brechas de esta cartera, para el desplegable: cuántos proyectos apuntan a cada una, cuánto cuestan esos proyectos
     #   y cuánto aportan (en la unidad de cada brecha).
@@ -251,17 +249,8 @@ def tablero(clave, cartera):
     else:
         tarjeta(fila1[1], "¿Cuánto cambiaron los costos?", "—", "sin montos para comparar")
 
-    # Avance frente a gasto (aproximación al valor ganado): solo proyectos con avance declarado en 2026
-    #   Cifra principal: cuánto avance declaran por cada sol gastado. S/ 1 = avanzan al mismo ritmo que gastan;
-    #   menos de S/ 1 = gastan más rápido de lo que avanzan
-    if r["n_comparables_avance"] > 0:
-        indice = f"{r['indice_avance_gasto']:.2f}".replace(".", ",")
-        tarjeta(fila1[2], "¿Avanzan al ritmo de lo que gastan?", f"S/ {indice}",
-                "de avance declarado por cada sol gastado (S/ 1 = al mismo ritmo)",
-                [(n_(r["n_comparables_avance"]), "con avance declarado en 2026 (base del cálculo)"),
-                 (n_(r["n_alerta_gasto_avance"]), "con gasto 30 puntos o más por encima de su avance")])
-    else:
-        tarjeta(fila1[2], "¿Avanzan al ritmo de lo que gastan?", "—", "ningún proyecto declaró su avance en 2026")
+    # (La tarjeta "¿Avanzan al ritmo de lo que gastan?" se quitó: el avance es autodeclarado y la mitad de las entidades
+    #  declara un avance igual a lo gastado, así que la comparación no es confiable para decidir.)
 
     # P4: problemas del último reporte de seguimiento (los 3 temas más comunes, con nombre corto)
     con_problemas = cartera[cartera["clase_problema"] == "Reporta problemas"]
@@ -271,7 +260,7 @@ def tablero(clave, cartera):
             [(n_(k), TEMA_CORTO.get(t, t.lower())) for t, k in comunes.items()])
 
     # P5: financiamiento
-    tarjeta(fila2[1], "¿Tienen financiamiento?", porc(r["pct_n_presupuesto"]), "con presupuesto 2026",
+    tarjeta(fila1[2], "¿Tienen financiamiento?", porc(r["pct_n_presupuesto"]), "con presupuesto 2026",
             [(n_(r["n_prog_2026_sin_pim"]), "con programación 2026, pero sin presupuesto"),
              (n_(r["n_prog_2027"]), "con programación desde 2027"),
              (n_(r["n_sin_fin_falta"]), f"sin presupuesto ni programación · {millones(r['saldo_sin_fin_falta'])} por ejecutar")])
@@ -280,10 +269,10 @@ def tablero(clave, cartera):
     plan = ([(porc(r["pct_cumple_programacion"]), "de lo planeado gastado (ene–oct)")]
             if pd.notna(r["pct_cumple_programacion"]) else [])
     if r["n_atrasados"] > 0:
-        tarjeta(fila2[2], "¿Cuánto atraso hay?", meses(r["mediana_meses_atraso"]), f"atraso típico de los {n_(r['n_atrasados'])} atrasados",
+        tarjeta(fila2[1], "¿Cuánto atraso hay?", meses(r["mediana_meses_atraso"]), f"atraso típico de los {n_(r['n_atrasados'])} atrasados",
                 [(n_(r["n_atraso_mas_36"]), "con más de 3 años")] + plan)
     else:
-        tarjeta(fila2[2], "¿Cuánto atraso hay?", "0", "proyectos atrasados", plan)
+        tarjeta(fila2[1], "¿Cuánto atraso hay?", "0", "proyectos atrasados", plan)
 
     # Detalles a un clic: todos los temas de problemas y los cinco grupos de financiamiento
     d1, d2 = st.columns(2)
@@ -459,13 +448,9 @@ ORDENES = {"Estado: primero los que requieren atención": (["_orden", "costo"], 
            "Ejecución acumulada: de mayor a menor": (["ejec_acum"], [False]),
            "Ejecución 2026: de menor a mayor": (["ejec_2026"], [True]),
            "Atraso: de mayor a menor": (["meses_atraso"], [False]), "Nombre: de la A a la Z": (["que_es"], [True])}
-b1, b2, b3 = st.columns([1, 1.2, 1.8])
+b1, b2, _ = st.columns([1, 1.2, 1.8])
 busqueda = b1.text_input("Buscar", placeholder="Nombre, lugar o CUI")
 orden = b2.selectbox("Ordenar por", list(ORDENES))
-b3.write("")
-solo_alerta = b3.toggle("Solo los que gastaron 30 puntos o más por encima de lo que declaran haber avanzado")
-if solo_alerta:
-    vista = vista[vista["alerta_gasto_avance"].fillna(False).astype(bool)]
 if busqueda:
     q = busqueda.strip().lower()
     vista = vista[vista["que_es"].str.lower().str.contains(q, regex=False) | vista["lugar"].str.lower().str.contains(q, regex=False)
@@ -550,9 +535,6 @@ def ficha(fila):
                         f"{fila['avance_ejecucion']:.0f} %{fisico}.")
         else:
             st.markdown("**Avance que declara la entidad:** no lo ha declarado.")
-        for frase in [texto("frase_indice"), texto("frase_alerta")]:
-            if frase:
-                st.markdown(frase)
         st.markdown("Para su estado se usa el avance que declaró la entidad." if fila.get("avance_fuente") == "declarado por la entidad"
                     else "Para su estado se usa lo gastado, porque la entidad no declaró su avance en el último año.")
         if pd.notna(fila["fecha_12b"]):
@@ -588,7 +570,7 @@ tabla.insert(0, "Ficha", False)
 tabla.insert(1, "Mapa", vista["id"].isin(ubicar))
 # La clave cambia con los filtros y después de abrir cada ficha: así la lista vuelve a mostrarse sin "Ver ficha" marcado
 version = st.session_state.get("version_lista", 0)
-clave_lista = f"lista_{version}_" + str(abs(hash((sector, unidad, len(vista), orden, busqueda, solo_alerta, tuple(vista["id"].head(3))))))
+clave_lista = f"lista_{version}_" + str(abs(hash((sector, unidad, len(vista), orden, busqueda, tuple(vista["id"].head(3))))))
 editada = st.data_editor(
     tabla, hide_index=True, width="stretch", height=min(38 + 35 * len(tabla), 460), key=clave_lista,
     disabled=[c for c in tabla.columns if c not in ("Ficha", "Mapa")],   # solo se marcan las casillas; los datos no se editan

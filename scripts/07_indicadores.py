@@ -464,6 +464,8 @@ lineas = [
     f"- **Programadas, pero sin presupuesto:** {pct(t['pct_n_programado'])} de las inversiones y {pct(t['pct_costo_programado'])} del costo.",
     f"- **Sin financiamiento ni programación:** {pct(t['pct_n_sin_nada'])} de las inversiones y {pct(t['pct_costo_sin_nada'])} del costo.", "",
     "### Avance frente a gasto (aproximación al valor ganado)",
+    "**No se muestra en la app** (decisión del 11/11/2026): el avance es autodeclarado y el 49 % de los proyectos comparables declara un avance igual a lo gastado, así que la comparación no es confiable.",
+    "",
     f"- El avance que usa la app sale de la **declaración de la entidad** en {n(t['n_avance_declarado'])} proyectos; en el resto, de lo gastado.",
     f"- Comparables en la misma fecha (avance declarado en 2026): **{n(t['n_comparables_avance'])}**. En ellos, el avance declarado es "
     f"**{pct(t['pct_avance_declarado'])}** y lo gastado a esa fecha **{pct(t['pct_gastado_comparable'])}** del costo: "

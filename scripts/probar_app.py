@@ -56,9 +56,9 @@ print("5. Cartera completa — errores:", len(app.exception), "| métricas:", [m
 fallas = []
 for s in app.selectbox[0].options[1:]:
     app.selectbox[0].select(s).run()
-    if app.exception or cifras() != 6:
+    if app.exception or cifras() != 5:
         fallas.append(s)
-print("6. Los 33 ministerios o entidades — con error o sin sus 6 indicadores:", fallas or "ninguno")
+print("6. Los 33 ministerios o entidades — con error o sin sus 5 indicadores:", fallas or "ninguno")
 
 # Nivel 2 (ministerio): elegir el estado "Atrasado" en el MIDIS; las cifras deben ser solo las de los atrasados
 #   Selectores: [0] cartera, [1] estado del ministerio, [2] unidad ejecutora, [3] estado de la unidad
@@ -72,9 +72,5 @@ app.selectbox[2].select(app.selectbox[2].options[1]).run()
 app.selectbox[3].select("Sin presupuesto este año").run()
 print("8. Nivel 3, primera unidad y 'Sin presupuesto este año' — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric])
 
-# Filtro "solo los que gastaron 30 puntos o más por encima de su avance" en Educación
-app.selectbox[0].select("EDUCACION").run()
-app.toggle[0].set_value(True).run()
-print("9. Filtro de alerta (Educación) — errores:", len(app.exception), "| proyectos del nivel 3:", [m.value for m in app.metric][2])
 for e in app.exception:
     print("ERROR:", e.value)

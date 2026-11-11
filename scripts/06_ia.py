@@ -105,8 +105,11 @@ def llamar(url, clave, modelo, contenido, instrucciones=INSTRUCCIONES):
                 respuesta = json.loads(r.read().decode())
             break
         except urllib.error.HTTPError as e:
-            if e.code in (500, 503) and intento < 3:
-                time.sleep(15 * (intento + 1))
+            # 429 = límite del nivel gratuito. Si es por minuto, basta esperar; si es por día, hay que seguir mañana
+            e.detalle = e.read().decode(errors="ignore")
+            por_minuto = e.code == 429 and "perday" not in e.detalle.lower().replace(" ", "")
+            if (e.code in (500, 503) or por_minuto) and intento < 3:
+                time.sleep(65 if e.code == 429 else 15 * (intento + 1))
                 continue
             raise
     datos = json.loads(respuesta["choices"][0]["message"]["content"])   # salida estructurada: si no es JSON, falla aquí
@@ -150,6 +153,7 @@ def main():
         except urllib.error.HTTPError as e:
             if e.code == 429:                                   # se acabó el cupo: guardar lo avanzado y salir
                 print("Se alcanzó el límite del proveedor (429). Se guarda lo avanzado; vuelve a correrlo más tarde.")
+                print("  Detalle del proveedor:", " ".join(getattr(e, "detalle", "").split())[:400])
                 break
             print(f"  error HTTP {e.code} en el grupo que empieza en {inicio}")
             continue
