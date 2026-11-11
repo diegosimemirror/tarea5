@@ -30,8 +30,14 @@ st.set_page_config(page_title="Cartera de inversiones del Estado", page_icon="�
 # ============================================================
 IA = RAIZ / "data" / "procesado" / "ia_titulos.parquet"
 
+def marca_datos():
+    """Fecha de modificación de los archivos de datos. Se pasa a las funciones con caché: si un archivo cambia
+    (por ejemplo, al subir títulos nuevos a GitHub), la marca cambia y Streamlit vuelve a leer los datos.
+    Antes: la caché guardaba los datos de la primera carga para siempre | Después: se renueva con cada cambio."""
+    return tuple(round(p.stat().st_mtime) for p in sorted(PROCESADO.glob("*.parquet")))
+
 @st.cache_data
-def cargar():
+def cargar(marca):
     """Lee las cinco preguntas. Si existen títulos de alcance hechos con IA (Proceso 6), los usa en lugar del nombre
     acortado; el nombre oficial sigue en la columna 'nombre' (se muestra en "Para especialistas")."""
     tabla = pd.read_parquet(DATOS)
@@ -58,12 +64,12 @@ def cargar():
     return tabla
 
 @st.cache_data
-def cargar_indicadores():
+def cargar_indicadores(marca):
     """Una fila por ministerio o entidad, más la fila 'CARTERA COMPLETA' (Proceso 7)."""
     return pd.read_parquet(PROCESADO / "indicadores_cartera.parquet").set_index("sector")
 
 @st.cache_data
-def cargar_brechas():
+def cargar_brechas(marca):
     """Todas las brechas de cada proyecto (Proceso 3): una fila por proyecto y brecha, con su aporte y su unidad.
     Antes: 'PORCENTAJE DE …' en mayúsculas | Después: 'Porcentaje de …' (solo la primera letra en mayúscula)."""
     b = pd.read_parquet(PROCESADO / "brechas_gobierno_nacional.parquet")
@@ -71,9 +77,10 @@ def cargar_brechas():
     b["unidad_medida"] = b["unidad_medida"].str.lower()
     return b
 
-inversiones = cargar()
-indicadores = cargar_indicadores()
-brechas_todas = cargar_brechas()
+marca = marca_datos()
+inversiones = cargar(marca)
+indicadores = cargar_indicadores(marca)
+brechas_todas = cargar_brechas(marca)
 DIAS_AL_CIERRE = (pd.Timestamp("2026-12-31") - pd.Timestamp("2026-11-10")).days   # misma fecha de referencia que los Procesos 4 y 7
 
 # Nombres que entiende cualquiera, en lugar de los nombres de sector del MEF
