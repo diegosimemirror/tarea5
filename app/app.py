@@ -28,22 +28,21 @@ st.set_page_config(page_title="Cartera de inversiones del Estado", page_icon="�
 # ============================================================
 # PASO 5.1: Cargar los datos una sola vez (st.cache_data guarda la tabla en memoria entre clics)
 # ============================================================
-IA = RAIZ / "data" / "procesado" / "ia_respuestas.parquet"
+IA = RAIZ / "data" / "procesado" / "ia_titulos.parquet"
 
 @st.cache_data
 def cargar():
-    """Lee las cinco preguntas. Si existen respuestas de la IA (Proceso 6), las usa en lugar de las reglas."""
+    """Lee las cinco preguntas. Si existen títulos de alcance hechos con IA (Proceso 6), los usa en lugar del nombre
+    acortado; el nombre oficial sigue en la columna 'nombre' (se muestra en "Para especialistas")."""
     tabla = pd.read_parquet(DATOS)
     tabla["redactado_por_ia"] = False
     tabla["lo_que_frena"] = ""
     if IA.exists():
-        ia = pd.read_parquet(IA)[["id", "que_es", "problema", "lo_que_frena"]].rename(
-            columns={"que_es": "que_es_ia", "problema": "problema_ia", "lo_que_frena": "frena_ia"})
+        # Antes: que_es = nombre oficial acortado | Después: que_es = título de alcance (si la IA lo produjo y pasó el control)
+        ia = pd.read_parquet(IA)[["id", "titulo_ia"]]
         tabla = tabla.merge(ia, on="id", how="left")
-        con_ia = tabla["que_es_ia"].fillna("") != ""
-        tabla.loc[con_ia, "que_es"] = tabla.loc[con_ia, "que_es_ia"]
-        tabla.loc[con_ia, "problema"] = tabla.loc[con_ia, "problema_ia"]
-        tabla.loc[con_ia, "lo_que_frena"] = tabla.loc[con_ia, "frena_ia"]
+        con_ia = tabla["titulo_ia"].fillna("") != ""
+        tabla.loc[con_ia, "que_es"] = tabla.loc[con_ia, "titulo_ia"]
         tabla.loc[con_ia, "redactado_por_ia"] = True
     # Indicadores de cartera del Proceso 7: las frases para la ficha y la clasificación de problemas de cada proyecto
     #   Antes: 1 fila por proyecto con las cinco preguntas | Después: la misma fila, con 8 columnas más
@@ -531,12 +530,14 @@ def ficha(fila):
     for pregunta, respuesta, detalle in preguntas:
         cuerpo = f'<p class="respuesta">{html.escape(respuesta)}</p>' if respuesta else ""
         st.markdown(f'<p class="pregunta">{pregunta}</p>{cuerpo}{detalle}', unsafe_allow_html=True)
-    st.caption("Resumen redactado con inteligencia artificial a partir de los datos del MEF; confírmalo en el detalle técnico antes de citarlo."
+    st.caption("El título lo redactó una IA a partir de la descripción técnica del MEF; el nombre oficial está en "
+               "«Para especialistas». El resto del resumen se elaboró automáticamente con los datos del MEF."
                if fila["redactado_por_ia"] else "Resumen elaborado automáticamente a partir de los datos del MEF.")
     if fila["cui"]:
         st.link_button("Ver el detalle técnico en el MEF ↗", f'https://ofi5.mef.gob.pe/ssi/Ssi/Index?codigo={fila["cui"]}&tipo=2')
     with st.expander("Para especialistas (términos de Invierte.pe)"):
         st.markdown(
+            f"- **Nombre oficial:** {fila['nombre']}\n"
             f"- **CUI:** {fila['id']} · **Unidad ejecutora:** {fila['unidad']}\n"
             f"- **UEI:** {fila['uei'] or 'sin dato'} · **OPMI:** {fila['opmi'] or 'sin dato'}\n"
             f"- **PIM 2026:** {millones(fila['pim_2026'])} · **Devengado 2026:** {millones(fila['dev_2026'])}\n"
