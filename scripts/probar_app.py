@@ -24,7 +24,7 @@ print("   Ordenada de mayor a menor costo:", bool(costos.is_monotonic_decreasing
 # Abrir una ficha con el enlace directo (?ficha=CUI) y comprobar que no hay errores ni preguntas faltantes
 app.query_params["ficha"] = "2613205"
 app.run()
-preguntas = [p for p in ["¿Tiene financiamiento?", "¿Qué problemas reporta?", "¿Cuánto avanzó y cuánto gastó?"] if any(p in m.value for m in app.markdown)]
+preguntas = [p for p in ["¿Tiene financiamiento?", "¿Qué problemas reporta?", "¿Cuánto se ha ejecutado?"] if any(p in m.value for m in app.markdown)]
 print("3. Ficha por enlace (2613205) — errores:", len(app.exception), "| preguntas nuevas presentes:", preguntas)
 del app.query_params["ficha"]
 

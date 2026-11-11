@@ -435,38 +435,28 @@ def ficha(fila):
         detalle_problema = f'<p class="cita">«{html.escape(original)}»</p>'
 
     # (pregunta, respuesta, detalle opcional en HTML)
-    # "¿Cuánto avanzó y cuánto gastó?": dos avances que declara la entidad y dos medidas de gasto, en barras de 0 a 100
-    def barra(etiqueta, valor, unidad):
+    # "¿Cuánto se ha ejecutado?": solo dos medidas, en barras de 0 a 100 (lo demás va en "Para especialistas")
+    #   1) Ejecución presupuestal 2026: devengado 2026 / presupuesto 2026 (PIM)
+    #   2) Ejecución acumulada: devengado de toda su vida / costo actualizado
+    def barra(etiqueta, valor, detalle_monto):
         if pd.isna(valor):
-            return f"<span>{etiqueta}</span><span></span><span>sin dato</span>"
+            return f"<span>{etiqueta}</span><span></span><span>{detalle_monto}</span>"
         cifra = f"{valor:.1f}".replace(".", ",") if abs(valor) < 10 else f"{valor:.0f}"   # 3,5 % y 2,5 % no se confunden
-        return (f'<span>{etiqueta}</span><span class="pista" title="{etiqueta}: {cifra} {unidad}">'
-                f'<i style="width:{min(max(valor, 0), 100):.0f}%"></i></span><span>{cifra} {unidad}</span>')
-    partes = []
-    if pd.notna(fila.get("avance_ejecucion")) and pd.notna(fila.get("fecha_declaracion")):
-        partes.append(f'<span class="grupo">Avance que declara la entidad ({fila["fecha_declaracion"]:%d/%m/%Y})</span>')
-        partes.append(barra("Toda la inversión", fila["avance_ejecucion"], "%"))
-        if pd.notna(fila.get("avance_fisico")):
-            partes.append(barra("Solo obra y equipos", fila["avance_fisico"], "%"))
-    else:
-        partes.append('<span class="grupo">La entidad no ha declarado su avance.</span>')
-    partes.append('<span class="grupo">Dinero gastado</span>')
-    gastado_vida, gastado_anio = fila.get("pct_gastado_vida"), fila.get("pct_gastado_2026")
-    partes.append(barra("En toda su vida", 100 * gastado_vida if pd.notna(gastado_vida) else float("nan"), "% de su costo"))
-    partes.append(barra("Este año", 100 * gastado_anio, "% de su presupuesto 2026") if pd.notna(gastado_anio)
-                  else "<span>Este año</span><span></span><span>no tiene presupuesto 2026</span>")
-    detalle_avance = f'<div class="avance">{"".join(partes)}</div>'
-    if texto("frase_indice"):
-        detalle_avance += f'<p class="nota">{html.escape(texto("frase_indice"))}</p>'
-    if texto("frase_alerta"):   # la señal lleva su símbolo; el texto va en el color normal
-        detalle_avance += f'<p class="nota"><b style="color:#c98a00">!</b> {html.escape(texto("frase_alerta"))}</p>'
-    fuente_avance = ("Para su estado se usa el avance que declaró la entidad." if fila.get("avance_fuente") == "declarado por la entidad"
-                     else "Para su estado se usa lo gastado, porque la entidad no declaró su avance en el último año.")
+        return (f'<span>{etiqueta}</span><span class="pista" title="{etiqueta}: {cifra} %">'
+                f'<i style="width:{min(max(valor, 0), 100):.0f}%"></i></span><span>{cifra} % · {detalle_monto}</span>')
+    pim, dev_anio, dev_vida, costo = fila["pim_2026"], fila["dev_2026"], fila["dev_acumulado"], fila["costo"]
+    partes = [
+        barra("Ejecución presupuestal 2026", 100 * dev_anio / pim, f"{millones(dev_anio)} de {millones(pim)}")
+        if pd.notna(pim) and pim > 0 else barra("Ejecución presupuestal 2026", float("nan"), "no tiene presupuesto 2026"),
+        barra("Ejecución acumulada (toda su vida)", 100 * dev_vida / costo if costo else float("nan"),
+              f"{millones(dev_vida)} de {millones(costo)}"),
+    ]
+    detalle_ejecucion = f'<div class="avance">{"".join(partes)}</div>'
 
     preguntas = [("¿Qué es?", f'{fila["que_es"]}. {fila["tipo_simple"]} en {fila["lugar"]}.', ""),
                  ("¿Qué problema resuelve?", fila["problema"], detalle_brecha),
-                 ("¿Cuánto cuesta y cuánto se ha gastado?", f'{fila["cuanto"]} {texto("frase_costo")}'.strip(), ""),
-                 ("¿Cuánto avanzó y cuánto gastó?", "", detalle_avance + f'<p class="nota">{fuente_avance}</p>'),
+                 ("¿Cuánto cuesta?", f'Cuesta {millones(costo)}. {texto("frase_costo")}'.strip(), ""),
+                 ("¿Cuánto se ha ejecutado?", "", detalle_ejecucion),
                  ("¿Tiene financiamiento?", texto("frase_dinero"), ""),
                  ("¿Cuándo termina?", fila["cuando"], ""),
                  ("¿Cómo va?", f'{fila["estado"]}. {fila["estado_motivo"]} {texto("frase_programacion")}'.strip(), ""),
@@ -487,6 +477,18 @@ def ficha(fila):
             f"- **PIM 2026:** {millones(fila['pim_2026'])} · **Devengado 2026:** {millones(fila['dev_2026'])}\n"
             f"- **Modalidad:** {fila['modalidad'] or 'sin dato'} · **Registrada en el PMI:** {fila['en_pmi']}\n"
             f"- **Brecha (texto del MEF):** {fila['brecha'] or 'sin dato'}")
+        # Avance que declara la entidad (12-B) frente a lo gastado: aproximación al valor ganado
+        if pd.notna(fila.get("avance_ejecucion")) and pd.notna(fila.get("fecha_declaracion")):
+            fisico = f"; solo obra y equipos: {fila['avance_fisico']:.0f} %" if pd.notna(fila.get("avance_fisico")) else ""
+            st.markdown(f"**Avance que declara la entidad ({fila['fecha_declaracion']:%d/%m/%Y}):** toda la inversión "
+                        f"{fila['avance_ejecucion']:.0f} %{fisico}.")
+        else:
+            st.markdown("**Avance que declara la entidad:** no lo ha declarado.")
+        for frase in [texto("frase_indice"), texto("frase_alerta")]:
+            if frase:
+                st.markdown(frase)
+        st.markdown("Para su estado se usa el avance que declaró la entidad." if fila.get("avance_fuente") == "declarado por la entidad"
+                    else "Para su estado se usa lo gastado, porque la entidad no declaró su avance en el último año.")
         if pd.notna(fila["fecha_12b"]):
             st.markdown(f"**Último 12-B ({fila['fecha_12b']:%d/%m/%Y})**")
             for etq, col in [("Situación", "situacion_12b"), ("Problemas", "problema_12b"), ("Acciones", "acciones_12b")]:

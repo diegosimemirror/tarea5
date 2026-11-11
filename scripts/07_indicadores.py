@@ -292,23 +292,18 @@ def frase_costo(f):
     return " ".join(partes)
 
 def frase_dinero(f):
-    """P2 + P5: si tiene dinero este año, cuánto le falta gastar y cuánto le falta en total."""
+    """P5: si tiene dinero. Lo gastado (ejecución anual y acumulada) se muestra aparte en la ficha, en
+    "¿Cuánto se ha ejecutado?", para no repetirlo aquí."""
     g = f["financiamiento"]
     if g == GRUPOS_FIN[0][0]:
-        pend = f["pct_pendiente_2026"]
-        resto = "ya lo gastó todo" if pend < 0.005 else f"le falta gastar el {porc(pend)} ({millones(f['pendiente_2026'])})"
-        t = f"Sí. Tiene {millones(f['pim_2026'])} de presupuesto 2026 y {resto}."
-    elif g == GRUPOS_FIN[1][0]:
-        t = f"No. Estaba programado para 2026 ({millones(f['programado_pmi_2026'])}), pero no recibió presupuesto."
-    elif g == GRUPOS_FIN[2][0]:
-        t = f"Todavía no. Está programado desde 2027 ({millones(f['programado_pmi_desde_2027'])})."
-    elif g == GRUPOS_FIN[3][0]:
-        return f"No. No tiene presupuesto 2026 ni está programado, y le falta ejecutar {millones(f['saldo_total'])}."
-    else:
-        return "No lo necesita: está prácticamente terminado."
-    if pd.notna(f["pct_saldo_total"]) and f["pct_saldo_total"] > 0.005:
-        t += f" En total, le falta ejecutar el {porc(f['pct_saldo_total'])} de su costo."
-    return t
+        return f"Sí. Tiene {millones(f['pim_2026'])} de presupuesto 2026."
+    if g == GRUPOS_FIN[1][0]:
+        return f"No. Estaba programado para 2026 ({millones(f['programado_pmi_2026'])}), pero no recibió presupuesto."
+    if g == GRUPOS_FIN[2][0]:
+        return f"Todavía no. Está programado desde 2027 ({millones(f['programado_pmi_desde_2027'])})."
+    if g == GRUPOS_FIN[3][0]:
+        return "No. No tiene presupuesto 2026 ni está programado."
+    return "No lo necesita: está prácticamente terminado."
 
 def frase_problemas(f, fecha):
     """P4: qué dice su último reporte de seguimiento (12-B)."""
