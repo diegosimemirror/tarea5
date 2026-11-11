@@ -18,7 +18,7 @@ print("1. Carga inicial — errores:", len(app.exception), "| métricas:", [m.va
 botones = [b for b in app.button if b.label == "Ver ficha"]
 print("2. Tarjetas con botón 'Ver ficha':", len(botones))
 botones[0].click().run()
-preguntas = [p for p in ["¿Tiene financiamiento?", "¿Qué problemas reporta?"] if any(p in m.value for m in app.markdown)]
+preguntas = [p for p in ["¿Tiene financiamiento?", "¿Qué problemas reporta?", "¿Cuánto avanzó y cuánto gastó?"] if any(p in m.value for m in app.markdown)]
 print("3. Después de abrir la ficha — errores:", len(app.exception), "| preguntas nuevas presentes:", preguntas)
 
 # Cambiar de ministerio (Transportes) y volver a revisar
@@ -36,8 +36,13 @@ print("5. Cartera completa — errores:", len(app.exception), "| métricas:", [m
 fallas = []
 for s in app.selectbox[0].options[1:]:
     app.selectbox[0].select(s).run()
-    if app.exception or cifras() != 6:
+    if app.exception or cifras() != 7:
         fallas.append(s)
-print("6. Los 33 ministerios o entidades — con error o sin sus 6 indicadores:", fallas or "ninguno")
+print("6. Los 33 ministerios o entidades — con error o sin sus 7 indicadores:", fallas or "ninguno")
+
+# Filtro "solo los que gastaron 30 puntos o más por encima de su avance" en Educación
+app.selectbox[0].select("EDUCACION").run()
+app.toggle[0].set_value(True).run()
+print("7. Filtro de alerta (Educación) — errores:", len(app.exception), "| título:", [s.value for s in app.subheader][-1])
 for e in app.exception:
     print("ERROR:", e.value)

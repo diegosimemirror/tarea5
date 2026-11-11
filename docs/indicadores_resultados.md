@@ -52,15 +52,20 @@
 | Con presupuesto 2026 | 3 044 | S/ 332.8 mil millones | S/ 216.8 mil millones |
 | Programado para 2026, sin presupuesto | 1 150 | S/ 67.8 mil millones | S/ 65.7 mil millones |
 | Programado para 2027 en adelante | 1 023 | S/ 32.1 mil millones | S/ 26.8 mil millones |
-| Sin financiamiento – le falta ejecutar | 5 476 | S/ 164.7 mil millones | S/ 160.5 mil millones |
-| Sin financiamiento – prácticamente terminado | 2 038 | S/ 23.7 mil millones | S/ 2.6 mil millones |
+| Sin financiamiento – le falta ejecutar | 5 775 | S/ 166.7 mil millones | S/ 161.0 mil millones |
+| Sin financiamiento – prácticamente terminado | 1 739 | S/ 21.7 mil millones | S/ 2.1 mil millones |
 
 - **Con presupuesto 2026:** 24% de las inversiones y 54% del costo.
 - **Programadas, pero sin presupuesto:** 17% de las inversiones y 16% del costo.
 - **Sin financiamiento ni programación:** 59% de las inversiones y 30% del costo.
 
+### Avance frente a gasto (aproximación al valor ganado)
+- El avance que usa la app sale de la **declaración de la entidad** en 4 219 proyectos; en el resto, de lo gastado.
+- Comparables en la misma fecha (avance declarado en 2026): **4 165**. En ellos, el avance declarado es **46%** y lo gastado a esa fecha **44%** del costo: por cada sol gastado se declara un avance de **S/ 1.05**.
+- Con lo gastado 30 puntos o más por encima del avance declarado: **73** proyectos.
+
 ### P7. Atraso
-- Atrasadas: **3 380**; mediana de **46 meses**; más de 1 año: 2 794; más de 3 años: **2 007**.
+- Atrasadas: **3 631**; mediana de **45 meses**; más de 1 año: 2 982; más de 3 años: **2 073**.
 - Se mide contra la última fecha de fin registrada; el atraso frente al plan original puede ser mayor.
 - Programación 2026 (12-B): de enero a octubre se programó S/ 13.5 mil millones y se gastó S/ 9.3 mil millones (**69%**). 1 438 inversiones gastaron menos del 70 % de lo programado.
 
@@ -68,22 +73,22 @@
 
 | Ministerio o entidad | Inversiones | Costo | Con brecha | Falta gastar 2026 | Desviación del costo | Reportan problemas | Con presupuesto 2026 | Atrasadas (mediana) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Transportes y Comunicaciones | 1 236 | S/ 286.2 mil millones | 67% | 19% | 17% | 573 | 33% | 145 (27 m) |
-| Vivienda, Construccion y Saneamiento | 1 929 | S/ 50.8 mil millones | 59% | 38% | 38% | 589 | 26% | 678 (69 m) |
-| Educacion | 2 374 | S/ 48.9 mil millones | 77% | 30% | 42% | 1 048 | 36% | 535 (33 m) |
+| Transportes y Comunicaciones | 1 236 | S/ 286.2 mil millones | 67% | 19% | 17% | 573 | 33% | 158 (26 m) |
+| Vivienda, Construccion y Saneamiento | 1 929 | S/ 50.8 mil millones | 59% | 38% | 38% | 589 | 26% | 723 (68 m) |
+| Educacion | 2 374 | S/ 48.9 mil millones | 77% | 30% | 42% | 1 048 | 36% | 549 (33 m) |
 | Economia y Finanzas | 93 | S/ 42.5 mil millones | 97% | 43% | 25% | 71 | 39% | 0 (—) |
-| Fonafe | 1 139 | S/ 40.4 mil millones | 98% | 23% | 12% | 501 | 0% | 483 (28 m) |
-| Salud | 1 233 | S/ 30.7 mil millones | 93% | 26% | 29% | 593 | 9% | 694 (75 m) |
-| Agricultura y Riego | 1 415 | S/ 29.5 mil millones | 78% | 24% | 62% | 692 | 24% | 152 (30 m) |
+| Fonafe | 1 139 | S/ 40.4 mil millones | 98% | 23% | 12% | 501 | 0% | 545 (30 m) |
+| Salud | 1 233 | S/ 30.7 mil millones | 93% | 26% | 29% | 593 | 9% | 718 (75 m) |
+| Agricultura y Riego | 1 415 | S/ 29.5 mil millones | 78% | 24% | 62% | 692 | 24% | 226 (22 m) |
 | Presidencia del Consejo de Ministros | 164 | S/ 28.5 mil millones | 66% | 26% | 35% | 78 | 47% | 26 (22 m) |
-| Interior | 631 | S/ 12.9 mil millones | 97% | 48% | 29% | 392 | 26% | 51 (34 m) |
-| Energia y Minas | 286 | S/ 9.8 mil millones | 89% | 33% | 26% | 125 | 34% | 44 (80 m) |
+| Interior | 631 | S/ 12.9 mil millones | 97% | 48% | 29% | 392 | 26% | 57 (34 m) |
+| Energia y Minas | 286 | S/ 9.8 mil millones | 89% | 33% | 26% | 125 | 34% | 49 (79 m) |
 | Essalud | 772 | S/ 7.3 mil millones | 51% | sin dato | 7% | 374 | 0% | 379 (51 m) |
-| Justicia | 175 | S/ 7.0 mil millones | 96% | 30% | 52% | 127 | 16% | 21 (33 m) |
-| Produccion | 179 | S/ 4.4 mil millones | 94% | 24% | 18% | 144 | 40% | 6 (6 m) |
+| Justicia | 175 | S/ 7.0 mil millones | 96% | 30% | 52% | 127 | 16% | 24 (28 m) |
+| Produccion | 179 | S/ 4.4 mil millones | 94% | 24% | 18% | 144 | 40% | 8 (4 m) |
 | Cultura | 186 | S/ 3.9 mil millones | 99% | 21% | 41% | 161 | 33% | 34 (12 m) |
-| Poder Judicial | 408 | S/ 3.2 mil millones | 94% | 69% | 23% | 210 | 22% | 104 (8 m) |
-| Comercio Exterior y Turismo | 72 | S/ 2.6 mil millones | 94% | 27% | 29% | 54 | 62% | 0 (—) |
+| Poder Judicial | 408 | S/ 3.2 mil millones | 94% | 69% | 23% | 210 | 22% | 106 (8 m) |
+| Comercio Exterior y Turismo | 72 | S/ 2.6 mil millones | 94% | 27% | 29% | 54 | 62% | 1 (33 m) |
 | Ambiental | 112 | S/ 2.5 mil millones | 99% | 31% | 9% | 87 | 60% | 7 (22 m) |
 | Defensa | 20 | S/ 2.3 mil millones | 100% | 51% | 16% | 10 | 20% | 3 (23 m) |
 | Ministerio Publico | 85 | S/ 1.9 mil millones | 99% | 65% | 15% | 71 | 28% | 5 (41 m) |
@@ -109,4 +114,5 @@
 - **P3:** solo inversiones con monto viable y costo actualizado mayores que 0. Desviación = costo actualizado − monto viable.
 - **P4:** reglas de palabras sobre el último texto de problemas del 12-B; son aproximadas y es lo que la entidad reporta. Son problemas actuales, no riesgos con probabilidad e impacto.
 - **P5:** `PMI_ANIO_1` se toma como 2026 y `PMI_ANIO_2` a `4` como 2027 en adelante (evidencia: en el INSN San Borja, CUI 2547701, el año 1 es igual a su presupuesto 2026; sin confirmación oficial). La fuente del dinero no está en estos archivos.
+- **Avance frente a gasto:** el avance de ejecución lo declara la entidad en el 12-B (todos los componentes, valorizados a su costo; el avance físico solo considera los productos). Lo gastado es el devengado del SIAF hasta el mes de la declaración. Índice = avance declarado ÷ gastado (se parece al CPI del valor ganado; falta el valor planificado para el índice de cronograma). Advertencias: el avance es autodeclarado y el gasto incluye adelantos a contratistas.
 - **P7:** atraso = meses desde la fecha de fin registrada, si ya pasó y el avance es menor a 95 %. Programación mensual: devengado de enero a octubre ÷ lo programado para esos meses.

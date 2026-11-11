@@ -48,7 +48,7 @@ def cargar():
     #   Antes: 1 fila por proyecto con las cinco preguntas | Después: la misma fila, con 8 columnas más
     frases = pd.read_parquet(PROCESADO / "indicadores_proyecto.parquet")[
         ["id", "brechas_lista", "frase_brecha", "frase_costo", "frase_dinero", "frase_problemas", "frase_programacion",
-         "clase_problema", "temas"]]
+         "clase_problema", "temas", "pct_gastado_vida", "pct_gastado_2026", "frase_indice", "frase_alerta", "alerta_gasto_avance"]]
     return tabla.merge(frases, on="id", how="left")
 
 @st.cache_data
@@ -118,6 +118,14 @@ ul.detalle {padding-left:1.2rem;}
 .barra {display:flex; align-items:center; gap:8px;}
 .barra i {display:block; height:10px; border-radius:0 4px 4px 0; background:#2a78d6;}
 @media (prefers-color-scheme: dark) {.barra i {background:#3987e5;}}
+/* Avance y gasto en la ficha: barras de 0 a 100 sobre una pista gris, con el valor al lado */
+.avance {display:grid; grid-template-columns:minmax(120px, 11rem) minmax(100px, 1fr) minmax(150px, auto); gap:5px 10px;
+         align-items:center; font-size:0.92rem; margin:0 0 0.4rem 0;}
+.avance .grupo {grid-column:1 / -1; opacity:0.8; margin-top:0.35rem;}
+.pista {height:10px; background:rgba(128,128,128,0.18); border-radius:0 4px 4px 0;}
+.pista i {display:block; height:100%; background:#2a78d6; border-radius:0 4px 4px 0;}
+@media (prefers-color-scheme: dark) {.pista i {background:#3987e5;}}
+.nota {font-size:0.92rem; opacity:0.85; margin:0.2rem 0 0.9rem 0;}
 </style>""", unsafe_allow_html=True)
 
 def chip(estado, n=None):
@@ -153,7 +161,8 @@ def pie_de_pagina():
             "- **Por cerrar:** está prácticamente terminado (95 % o más) y falta el cierre formal.\n"
             "- **Sin presupuesto este año:** está aprobado, no ha empezado y no tiene presupuesto en 2026.\n"
             "- **En marcha:** ninguna de las anteriores.\n\n"
-            "El avance es el mayor entre el avance físico y el porcentaje gastado del costo. Reglas de ejemplo, por validar.\n\n"
+            "El avance es el que declaró la entidad en el último año (todos los componentes). Si no lo declaró, se usa el "
+            "porcentaje gastado del costo. Reglas de ejemplo, por validar.\n\n"
             "**Indicadores de la cartera**\n"
             "- **Brechas:** el vínculo que la entidad registró entre el proyecto y una brecha de servicio.\n"
             "- **Falta gastar este año:** presupuesto 2026 menos lo ya gastado (devengado).\n"
@@ -161,6 +170,9 @@ def pie_de_pagina():
             "- **Problemas:** el último reporte de seguimiento (formato 12-B), clasificado por temas con palabras clave. "
             "Son problemas que ya ocurren, no riesgos.\n"
             "- **Financiamiento:** presupuesto 2026 o montos en la programación multianual (se toma su primer año como 2026).\n"
+            "- **Avance y gasto:** el avance lo declara la entidad (\"toda la inversión\" incluye gestión, expediente técnico, "
+            "supervisión y liquidación; \"solo obra y equipos\", no). El gasto es lo devengado. Para compararlos se usa lo gastado "
+            "hasta el mes de la declaración. Se parece al valor ganado, pero el avance es autodeclarado y el gasto incluye adelantos.\n"
             "- **Atraso:** meses desde la última fecha de fin registrada; frente al plan original puede ser mayor. "
             "**Plan de gasto:** lo gastado de enero a octubre de 2026 frente a lo que la entidad planeó gastar en esos meses.")
     st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}.")
@@ -176,7 +188,17 @@ def tablero(clave, cartera):
     Insumo: la fila de indicadores_cartera del ministerio elegido (o de la cartera completa) | Resultado: tarjetas y detalles."""
     r = indicadores.loc[clave]
     st.subheader("¿Cómo está la cartera?")
-    fila1, fila2 = st.columns(3), st.columns(3)
+    fila1, fila2 = st.columns(4), st.columns(3)
+
+    # Avance frente a gasto (aproximación al valor ganado): solo proyectos con avance declarado en 2026
+    if r["n_comparables_avance"] > 0:
+        indice = f"{r['indice_avance_gasto']:.2f}".replace(".", ",")
+        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", f"{r['n_alerta_gasto_avance']:,.0f}",
+                f"proyectos gastaron 30 puntos o más por encima del avance que declaran. En los {r['n_comparables_avance']:,.0f} "
+                f"que declararon su avance en 2026: avance {porc(r['pct_avance_declarado'])}, gastado {porc(r['pct_gastado_comparable'])}; "
+                f"por cada sol gastado, un avance de S/ {indice}.")
+    else:
+        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", "—", "Ningún proyecto declaró su avance en 2026.")
 
     # P1: brechas
     tarjeta(fila1[0], "¿A qué brechas apuntan?", porc(r["pct_con_brecha"]),
@@ -320,10 +342,13 @@ unidad = f1.selectbox("Unidad ejecutora", lista_unidades,
                       format_func=lambda u: u if u == "Todas las unidades" else f"{u.title()} — {unidades.loc[u, 'n']:,}")
 estados_elegidos = f2.multiselect("Estado", sorted(ESTADOS, key=lambda e: ESTADOS[e][2]), placeholder="Todos los estados")
 busqueda = f3.text_input("Buscar", placeholder="Nombre, lugar o CUI")
+solo_alerta = st.toggle("Solo los que gastaron 30 puntos o más por encima de lo que declaran haber avanzado")
 
 vista = cartera if unidad == "Todas las unidades" else cartera[cartera["unidad"] == unidad]
 if estados_elegidos:
     vista = vista[vista["estado"].isin(estados_elegidos)]
+if solo_alerta:
+    vista = vista[vista["alerta_gasto_avance"].fillna(False).astype(bool)]
 if busqueda:
     q = busqueda.strip().lower()
     vista = vista[vista["que_es"].str.lower().str.contains(q, regex=False) | vista["lugar"].str.lower().str.contains(q, regex=False)
@@ -351,9 +376,38 @@ def ficha(fila):
         detalle_problema = f'<p class="cita">«{html.escape(original)}»</p>'
 
     # (pregunta, respuesta, detalle opcional en HTML)
+    # "¿Cuánto avanzó y cuánto gastó?": dos avances que declara la entidad y dos medidas de gasto, en barras de 0 a 100
+    def barra(etiqueta, valor, unidad):
+        if pd.isna(valor):
+            return f"<span>{etiqueta}</span><span></span><span>sin dato</span>"
+        cifra = f"{valor:.1f}".replace(".", ",") if abs(valor) < 10 else f"{valor:.0f}"   # 3,5 % y 2,5 % no se confunden
+        return (f'<span>{etiqueta}</span><span class="pista" title="{etiqueta}: {cifra} {unidad}">'
+                f'<i style="width:{min(max(valor, 0), 100):.0f}%"></i></span><span>{cifra} {unidad}</span>')
+    partes = []
+    if pd.notna(fila.get("avance_ejecucion")) and pd.notna(fila.get("fecha_declaracion")):
+        partes.append(f'<span class="grupo">Avance que declara la entidad ({fila["fecha_declaracion"]:%d/%m/%Y})</span>')
+        partes.append(barra("Toda la inversión", fila["avance_ejecucion"], "%"))
+        if pd.notna(fila.get("avance_fisico")):
+            partes.append(barra("Solo obra y equipos", fila["avance_fisico"], "%"))
+    else:
+        partes.append('<span class="grupo">La entidad no ha declarado su avance.</span>')
+    partes.append('<span class="grupo">Dinero gastado</span>')
+    gastado_vida, gastado_anio = fila.get("pct_gastado_vida"), fila.get("pct_gastado_2026")
+    partes.append(barra("En toda su vida", 100 * gastado_vida if pd.notna(gastado_vida) else float("nan"), "% de su costo"))
+    partes.append(barra("Este año", 100 * gastado_anio, "% de su presupuesto 2026") if pd.notna(gastado_anio)
+                  else "<span>Este año</span><span></span><span>no tiene presupuesto 2026</span>")
+    detalle_avance = f'<div class="avance">{"".join(partes)}</div>'
+    if texto("frase_indice"):
+        detalle_avance += f'<p class="nota">{html.escape(texto("frase_indice"))}</p>'
+    if texto("frase_alerta"):   # la señal lleva su símbolo; el texto va en el color normal
+        detalle_avance += f'<p class="nota"><b style="color:#c98a00">!</b> {html.escape(texto("frase_alerta"))}</p>'
+    fuente_avance = ("Para su estado se usa el avance que declaró la entidad." if fila.get("avance_fuente") == "declarado por la entidad"
+                     else "Para su estado se usa lo gastado, porque la entidad no declaró su avance en el último año.")
+
     preguntas = [("¿Qué es?", f'{fila["que_es"]}. {fila["tipo_simple"]} en {fila["lugar"]}.', ""),
                  ("¿Qué problema resuelve?", fila["problema"], detalle_brecha),
                  ("¿Cuánto cuesta y cuánto se ha gastado?", f'{fila["cuanto"]} {texto("frase_costo")}'.strip(), ""),
+                 ("¿Cuánto avanzó y cuánto gastó?", "", detalle_avance + f'<p class="nota">{fuente_avance}</p>'),
                  ("¿Tiene financiamiento?", texto("frase_dinero"), ""),
                  ("¿Cuándo termina?", fila["cuando"], ""),
                  ("¿Cómo va?", f'{fila["estado"]}. {fila["estado_motivo"]} {texto("frase_programacion")}'.strip(), ""),
@@ -361,8 +415,8 @@ def ficha(fila):
     if fila["lo_que_frena"]:
         preguntas.append(("¿Qué lo frena?", fila["lo_que_frena"], ""))
     for pregunta, respuesta, detalle in preguntas:
-        st.markdown(f'<p class="pregunta">{pregunta}</p><p class="respuesta">{html.escape(respuesta)}</p>{detalle}',
-                    unsafe_allow_html=True)
+        cuerpo = f'<p class="respuesta">{html.escape(respuesta)}</p>' if respuesta else ""
+        st.markdown(f'<p class="pregunta">{pregunta}</p>{cuerpo}{detalle}', unsafe_allow_html=True)
     st.caption("Resumen redactado con inteligencia artificial a partir de los datos del MEF; confírmalo en el detalle técnico antes de citarlo."
                if fila["redactado_por_ia"] else "Resumen elaborado automáticamente a partir de los datos del MEF.")
     if fila["cui"]:

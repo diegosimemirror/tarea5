@@ -235,6 +235,39 @@ ind["rango_programacion"] = pd.cut(ind["pct_cumple_programacion"], [-0.01, 0.7, 
 print("7.7 P7 rangos de atraso:", ind["rango_atraso"].value_counts().to_dict())
 
 # ============================================================
+# PASO 7.7a: ¿Cuánto avanzó y cuánto gastó?  (aproximación al valor ganado con datos públicos)
+#   Cuatro porcentajes de naturaleza distinta:
+#     - avance de ejecución (declarado por la entidad): todos los componentes, valorizados a su costo  -> se parece al valor ganado (EV)
+#     - avance físico (declarado): solo los productos (obra y equipos)
+#     - gastado en toda su vida: devengado acumulado / costo (SIAF)                                     -> se parece al costo real (AC)
+#     - gastado este año: devengado 2026 / presupuesto 2026 (PIM)
+#   Para comparar avance y gasto en la MISMA fecha se usa lo gastado hasta el mes de la declaración: devengado hasta 2025 +
+#   devengado de 2026 hasta ese mes. Solo es posible si la declaración es de 2026 (hay gasto mes a mes de ese año).
+#   Índice tipo valor ganado (como el CPI del PMBOK) = avance declarado / gastado a esa fecha. 0,85 = por cada sol gastado
+#   se avanzó el equivalente a 85 céntimos. Advertencias: el avance lo declara la entidad; el gasto es contable (incluye adelantos).
+# ============================================================
+ind["avance_ejecucion"] = inv["avance_ejecucion"]
+ind["avance_fisico"] = inv["avance_fisico"]
+ind["fecha_declaracion"] = inv["fecha_declaracion"]
+ind["avance_fuente"] = inv["avance_fuente"]
+ind["pct_gastado_vida"] = (inv["dev_acumulado"] / inv["costo"]).where(inv["costo"] > 0)
+ind["pct_gastado_2026"] = (inv["dev_2026"].fillna(0) / inv["pim_2026"]).where(inv["pim_2026"] > 0)
+
+meses_2026 = inv[[f"dev_2026_{i:02d}" for i in range(1, 12)]].fillna(0).to_numpy()
+mes_decl = inv["fecha_declaracion"].dt.month.fillna(0).astype(int).clip(0, 11).to_numpy()
+# Suma del gasto de enero hasta el mes de la declaración. Antes: 11 columnas mensuales | Después: 1 monto por proyecto
+gastado_hasta_mes = [fila[:m].sum() for fila, m in zip(meses_2026, mes_decl)]
+comparable = (inv["fecha_declaracion"].dt.year == 2026) & (inv["avance_ejecucion"] > 0) & (inv["costo"] > 0)
+ind["gastado_a_la_declaracion"] = (inv["dev_hasta_2025"].fillna(0) + pd.Series(gastado_hasta_mes, index=inv.index)).where(comparable)
+ind["pct_gastado_a_la_declaracion"] = ind["gastado_a_la_declaracion"] / inv["costo"]
+ind["valor_avanzado"] = (inv["avance_ejecucion"] / 100 * inv["costo"]).where(comparable)       # EV
+ind["indice_avance_gasto"] = (ind["valor_avanzado"] / ind["gastado_a_la_declaracion"]).where(ind["gastado_a_la_declaracion"] > 0)
+ind["diferencia_gasto_avance"] = 100 * ind["pct_gastado_a_la_declaracion"] - inv["avance_ejecucion"].where(comparable)   # en puntos
+ind["alerta_gasto_avance"] = ind["diferencia_gasto_avance"] >= 30
+print("7.7a Avance frente a gasto: comparables", int(comparable.sum()), "| con alerta (gasto 30 puntos o más por encima del avance):",
+      int(ind["alerta_gasto_avance"].sum()), "| fuente del avance:", ind["avance_fuente"].value_counts().to_dict())
+
+# ============================================================
 # PASO 7.7b: Frases en lenguaje simple para la ficha de cada proyecto (las muestra la app, Proceso 5)
 #   Antes: números (pim_2026 = 681092, pct_pendiente_2026 = 0.0) | Después: "Sí. Tiene S/ 681 mil de presupuesto 2026 y ya lo gastó todo."
 # ============================================================
@@ -301,6 +334,24 @@ ind["frase_costo"] = ind.apply(frase_costo, axis=1)
 ind["frase_dinero"] = ind.apply(frase_dinero, axis=1)
 ind["frase_problemas"] = [frase_problemas(f, fecha) for (_, f), fecha in zip(ind.iterrows(), inv["fecha_12b"])]
 ind["frase_programacion"] = ind.apply(frase_programacion, axis=1)
+
+def frase_indice(f):
+    """Índice tipo valor ganado en palabras: 0,85 -> 'Por cada sol gastado ... el equivalente a S/ 0,85'."""
+    i = f["indice_avance_gasto"]
+    if pd.isna(i) or i >= 10:          # 10 o más: gasto casi nulo frente al avance; el índice no dice nada útil
+        return ""
+    monto = f"{i:.2f}".replace(".", ",")
+    return f"Por cada sol gastado hasta esa fecha, la entidad declara un avance equivalente a S/ {monto}."
+
+def frase_alerta(f):
+    """Solo si lo gastado supera al avance declarado por 30 puntos o más, comparados en la misma fecha. Redacción neutral."""
+    if not f["alerta_gasto_avance"]:
+        return ""
+    return (f"Lo gastado hasta la fecha de esa declaración ({porc(f['pct_gastado_a_la_declaracion'])}) supera en "
+            f"{f['diferencia_gasto_avance']:.0f} puntos al avance que declaró la entidad ({f['avance_ejecucion']:.0f} %).")
+
+ind["frase_indice"] = ind.apply(frase_indice, axis=1)
+ind["frase_alerta"] = ind.apply(frase_alerta, axis=1)
 print("7.7b Ejemplo (INSN San Borja, 2547701):", ind.loc[ind["cui"] == "2547701", ["frase_dinero", "frase_costo", "frase_problemas"]].iloc[0].tolist())
 
 # ============================================================
@@ -339,8 +390,17 @@ def resumen(g):
         "n_atraso_mas_12": int((g["meses_atraso"] > 12).sum()), "n_atraso_mas_36": int((g["meses_atraso"] > 36).sum()),
         "programado_ene_oct": g["programado_ene_oct"].sum(), "devengado_ene_oct": g.loc[g["programado_ene_oct"] > 0, "devengado_ene_oct"].sum(),
         "n_bajo_70_programacion": int((g["pct_cumple_programacion"] < 0.7).sum()),
+        # Avance frente a gasto (solo proyectos con avance declarado en 2026, comparados en la misma fecha)
+        "n_avance_declarado": int((g["avance_fuente"] == "declarado por la entidad").sum()),
+        "n_comparables_avance": int(g["valor_avanzado"].notna().sum()),
+        "n_alerta_gasto_avance": int(g["alerta_gasto_avance"].sum()),
+        "valor_avanzado": g["valor_avanzado"].sum(), "gastado_a_la_declaracion": g["gastado_a_la_declaracion"].sum(),
+        "costo_comparable_avance": g.loc[g["valor_avanzado"].notna(), "costo"].sum(),
     }
     fila["pct_cumple_programacion"] = proporcion(fila["devengado_ene_oct"], fila["programado_ene_oct"])
+    fila["pct_avance_declarado"] = proporcion(fila["valor_avanzado"], fila["costo_comparable_avance"])
+    fila["pct_gastado_comparable"] = proporcion(fila["gastado_a_la_declaracion"], fila["costo_comparable_avance"])
+    fila["indice_avance_gasto"] = proporcion(fila["valor_avanzado"], fila["gastado_a_la_declaracion"])
     # P5: los cinco grupos con su número, costo y saldo; y los tres niveles en porcentaje de proyectos y de costo
     for grupo, clave in GRUPOS_FIN:
         m = g["financiamiento"] == grupo
@@ -408,6 +468,12 @@ lineas = [
     "", f"- **Con presupuesto 2026:** {pct(t['pct_n_presupuesto'])} de las inversiones y {pct(t['pct_costo_presupuesto'])} del costo.",
     f"- **Programadas, pero sin presupuesto:** {pct(t['pct_n_programado'])} de las inversiones y {pct(t['pct_costo_programado'])} del costo.",
     f"- **Sin financiamiento ni programación:** {pct(t['pct_n_sin_nada'])} de las inversiones y {pct(t['pct_costo_sin_nada'])} del costo.", "",
+    "### Avance frente a gasto (aproximación al valor ganado)",
+    f"- El avance que usa la app sale de la **declaración de la entidad** en {n(t['n_avance_declarado'])} proyectos; en el resto, de lo gastado.",
+    f"- Comparables en la misma fecha (avance declarado en 2026): **{n(t['n_comparables_avance'])}**. En ellos, el avance declarado es "
+    f"**{pct(t['pct_avance_declarado'])}** y lo gastado a esa fecha **{pct(t['pct_gastado_comparable'])}** del costo: "
+    f"por cada sol gastado se declara un avance de **S/ {t['indice_avance_gasto']:.2f}**.",
+    f"- Con lo gastado 30 puntos o más por encima del avance declarado: **{n(t['n_alerta_gasto_avance'])}** proyectos.", "",
     "### P7. Atraso",
     f"- Atrasadas: **{n(t['n_atrasados'])}**; mediana de **{t['mediana_meses_atraso']:.0f} meses**; más de 1 año: {n(t['n_atraso_mas_12'])}; "
     f"más de 3 años: **{n(t['n_atraso_mas_36'])}**.",
@@ -433,6 +499,10 @@ lineas += ["", "## Definiciones y advertencias", "",
            "Son problemas actuales, no riesgos con probabilidad e impacto.",
            "- **P5:** `PMI_ANIO_1` se toma como 2026 y `PMI_ANIO_2` a `4` como 2027 en adelante (evidencia: en el INSN San Borja, CUI 2547701, "
            "el año 1 es igual a su presupuesto 2026; sin confirmación oficial). La fuente del dinero no está en estos archivos.",
+           "- **Avance frente a gasto:** el avance de ejecución lo declara la entidad en el 12-B (todos los componentes, valorizados a "
+           "su costo; el avance físico solo considera los productos). Lo gastado es el devengado del SIAF hasta el mes de la declaración. "
+           "Índice = avance declarado ÷ gastado (se parece al CPI del valor ganado; falta el valor planificado para el índice de cronograma). "
+           "Advertencias: el avance es autodeclarado y el gasto incluye adelantos a contratistas.",
            "- **P7:** atraso = meses desde la fecha de fin registrada, si ya pasó y el avance es menor a 95 %. "
            "Programación mensual: devengado de enero a octubre ÷ lo programado para esos meses."]
 (DOCS / "indicadores_resultados.md").write_text("\n".join(lineas) + "\n", encoding="utf-8")

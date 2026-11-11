@@ -147,10 +147,26 @@ def cuanto(f):
     # El cambio de costo desde que se aprobó (subió o bajó) lo calcula el Proceso 7 (frase_costo) y la app lo agrega aquí
     return t.strip()
 
+# Avance de la inversión, en %. Antes se tomaba el MAYOR entre el avance físico y el % gastado: eso mezclaba avance y
+# dinero, y escondía los proyectos que gastaron mucho y avanzaron poco (p. ej., 97 % gastado y 45 % declarado).
+# Ahora:
+#   1) el avance de ejecución que la entidad declaró en el último año (todos los componentes), si es mayor que 0;
+#   2) si no hay una declaración reciente, el % gastado del costo (devengado / costo), como aproximación.
+DECLARACION_RECIENTE = HOY - pd.DateOffset(years=1)
+
+def avance_declarado(f):
+    """True si la entidad declaró su avance en el último año y el valor es mayor que 0."""
+    return (pd.notna(f["avance_ejecucion"]) and f["avance_ejecucion"] > 0
+            and pd.notna(f["fecha_declaracion"]) and f["fecha_declaracion"] >= DECLARACION_RECIENTE)
+
 def avance(f):
-    """El mayor entre el avance físico y el financiero (gastado / costo), en %."""
-    fin_ = 100 * f["dev_acumulado"] / f["costo"] if f["costo"] and f["costo"] > 0 else 0
-    return max(f["avance_fisico"] if pd.notna(f["avance_fisico"]) else 0, fin_)
+    if avance_declarado(f):
+        return f["avance_ejecucion"]
+    gastado = 100 * f["dev_acumulado"] / f["costo"] if f["costo"] and f["costo"] > 0 else 0
+    return min(gastado, 100)
+
+def avance_fuente(f):
+    return "declarado por la entidad" if avance_declarado(f) else "según lo gastado"
 
 # ============================================================
 # PASO 4.5: ¿Cuándo termina?  (periodo de ejecución + cómo está respecto de su fecha de fin)
@@ -218,6 +234,7 @@ salida["tipo_simple"] = salida["tipo"].map(tipo_simple)
 salida["problema"] = salida.apply(problema, axis=1)
 salida["cuanto"] = salida.apply(cuanto, axis=1)
 salida["avance"] = salida.apply(avance, axis=1)
+salida["avance_fuente"] = salida.apply(avance_fuente, axis=1)
 salida["cuando"] = salida.apply(cuando, axis=1)
 salida[["estado", "estado_motivo"]] = salida.apply(lambda f: pd.Series(estado(f)), axis=1)
 salida.to_parquet(PROCESADO / "cinco_preguntas.parquet", index=False)

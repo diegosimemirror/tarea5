@@ -51,11 +51,16 @@ numeros = {"MONTO_VIABLE": "viable", "COSTO_ACTUALIZADO": "costo", "CTRL_CONCURR
            # Para los indicadores de cartera (Proceso 7): expediente técnico, laudos, cartas fianza, certificado 2026 y
            # montos de la programación multianual (PMI_ANIO_1 a 4: los años siguientes, según el nombre de la columna)
            "MONTO_ET_F8": "monto_et", "MONTO_LAUDO": "laudo", "MONTO_FIANZA": "fianza", "CERTIF_ANIO_ACTUAL": "certificado_2026",
-           "PMI_ANIO_1": "pmi_1", "PMI_ANIO_2": "pmi_2", "PMI_ANIO_3": "pmi_3", "PMI_ANIO_4": "pmi_4"}
+           "PMI_ANIO_1": "pmi_1", "PMI_ANIO_2": "pmi_2", "PMI_ANIO_3": "pmi_3", "PMI_ANIO_4": "pmi_4",
+           # Avance de ejecución que declara la entidad en el 12-B: avance de TODOS los componentes (productos, gestión del
+           # proyecto, expediente técnico, supervisión y liquidación), valorizado a su costo. Verificado con el detalle por
+           # componente del SSI (verDetEstimacion) en 3 proyectos. AVANCE_FISICO es lo mismo, pero solo con los productos.
+           "AVANCE_EJECUCION": "avance_ejecucion_original"}
 for col, nuevo in numeros.items():
     gn[nuevo] = pd.to_numeric(gn[col], errors="coerce")
 for col, nuevo in {"FECHA_VIABILIDAD": "fecha_viable", "FEC_INI_EJECUCION": "inicio", "FEC_FIN_EJECUCION": "fin",
-                   "FEC_INI_EJEC_FISICA": "inicio_fisico", "FEC_FIN_EJEC_FISICA": "fin_fisico"}.items():
+                   "FEC_INI_EJEC_FISICA": "inicio_fisico", "FEC_FIN_EJEC_FISICA": "fin_fisico",
+                   "ULT_FEC_DECLA_ESTIM": "fecha_declaracion"}.items():   # fecha en que la entidad declaró su avance
     gn[nuevo] = pd.to_datetime(gn[col], errors="coerce")
 gn["dev_acumulado"] = gn["dev_hasta_2025"].fillna(0) + gn["dev_2026"].fillna(0)
 
@@ -65,10 +70,12 @@ gn["dev_acumulado"] = gn["dev_hasta_2025"].fillna(0) + gn["dev_2026"].fillna(0)
 #   coordenadas fuera del Perú (incluye las que vienen en 0)
 # ============================================================
 gn["avance_fisico"] = gn["avance_fisico_original"].where(gn["avance_fisico_original"] <= 100)
+gn["avance_ejecucion"] = gn["avance_ejecucion_original"].where(gn["avance_ejecucion_original"] <= 100)
 gn["beneficiarios"] = gn["beneficiarios_original"].where(gn["beneficiarios_original"] <= 35_000_000)
 en_peru = gn["lat_original"].between(-18.5, 0.1) & gn["lon_original"].between(-81.5, -68.5)
 gn["lat"], gn["lon"] = gn["lat_original"].where(en_peru), gn["lon_original"].where(en_peru)
 print("3.4 Marcados como faltantes -> avance físico:", int((gn["avance_fisico_original"] > 100).sum()),
+      "| avance de ejecución:", int((gn["avance_ejecucion_original"] > 100).sum()),
       "| beneficiarios:", int((gn["beneficiarios_original"] > 35_000_000).sum()),
       "| coordenadas:", int((~en_peru).sum()))
 
@@ -114,16 +121,21 @@ print("3.6b Todas las brechas:", todas.shape, "| inversiones:", todas["cui"].nun
 # Programación mensual del año (para el Proceso 7). Significado deducido del nombre, porque el diccionario del MEF da error 404:
 #   MONTO_PROGRAMADO_m: lo que se programó gastar en el mes m | MONTO_ACTUALIZADO_m: la programación ya ajustada
 #   DEV_ENE_AÑO_VIG...: lo que se gastó (devengó) cada mes. Se suman de enero a octubre (los meses cerrados al 08/11/2026).
-MESES_CERRADOS = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SET", "OCT"]
-cols_mes = ([f"MONTO_PROGRAMADO_{i}" for i in range(1, 11)] + [f"MONTO_ACTUALIZADO_{i}" for i in range(1, 11)]
-            + [f"DEV_{m}_AÑO_VIG" for m in MESES_CERRADOS])
+#   El devengado de cada mes de 2026 (enero a noviembre) se guarda también por separado: con él se calcula lo gastado
+#   hasta el mes en que la entidad declaró su avance, para comparar avance y gasto en la misma fecha (Proceso 7).
+MESES_DEV = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SET", "OCT", "NOV"]
+cols_dev = [f"DEV_{m}_AÑO_VIG" for m in MESES_DEV]
+cols_mes = [f"MONTO_PROGRAMADO_{i}" for i in range(1, 11)] + [f"MONTO_ACTUALIZADO_{i}" for i in range(1, 11)] + cols_dev
 cols12 = ["CODIGO_UNICO", "FECHA_ULT_ACT_F12B", "ULT_ESTADO_SITUACIONAL", "ULT_PROBLEMA", "ACC_PROBLEMA"]
 f12b = pd.read_csv(CRUDO / "FORMATO_12B.csv", dtype=str, encoding="utf-8-sig", keep_default_na=False, usecols=cols12 + cols_mes)
 f12b = f12b[f12b["CODIGO_UNICO"].isin(gn["CODIGO_UNICO"])]
 # sum(axis=1): suma los 10 meses de cada fila. Antes: 10 columnas por concepto | Después: 1 total de enero a octubre
 mensual = {nombre: f12b[[c for c in cols_mes if c.startswith(prefijo)]].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=1)
-           for nombre, prefijo in [("programado_ene_oct", "MONTO_PROGRAMADO_"), ("reprogramado_ene_oct", "MONTO_ACTUALIZADO_"),
-                                   ("devengado_ene_oct", "DEV_")]}
+           for nombre, prefijo in [("programado_ene_oct", "MONTO_PROGRAMADO_"), ("reprogramado_ene_oct", "MONTO_ACTUALIZADO_")]}
+dev_mes = f12b[cols_dev].apply(pd.to_numeric, errors="coerce")
+mensual["devengado_ene_oct"] = dev_mes.iloc[:, :10].sum(axis=1, min_count=1)
+for i, c in enumerate(cols_dev, 1):
+    mensual[f"dev_2026_{i:02d}"] = dev_mes[c]          # dev_2026_01 = enero ... dev_2026_11 = noviembre
 # Nombres de personas en los textos (p. ej., "Ing. Juan Pérez"): se reemplazan por "[nombre omitido]" en la copia para mostrar.
 # La regla es prudente: puede ocultar alguna palabra de más, pero no deja nombres a la vista.
 PERSONA = (r"\b(Ing|ING|Sr|SR|Sra|SRA|Srta|Lic|LIC|Arq|ARQ|Dr|DR|Dra|DRA|Econ|ECON|Abog|ABOG|CPC|Mg|MG)\.\s*"
@@ -164,6 +176,8 @@ salida = gn.rename(columns=columnas)[list(columnas.values()) + [
     "fecha_12b", "situacion_12b", "problema_12b", "acciones_12b",
     # columnas para los indicadores de cartera (Proceso 7)
     "monto_et", "laudo", "fianza", "certificado_2026", "pmi_1", "pmi_2", "pmi_3", "pmi_4", "inicio_fisico", "fin_fisico",
-    "programado_ene_oct", "reprogramado_ene_oct", "devengado_ene_oct"]]
+    "programado_ene_oct", "reprogramado_ene_oct", "devengado_ene_oct",
+    # avance declarado por la entidad y gasto mensual de 2026 (avance frente a gasto, Proceso 7)
+    "avance_ejecucion", "avance_ejecucion_original", "fecha_declaracion", *[f"dev_2026_{i:02d}" for i in range(1, 12)]]]
 salida.to_parquet(PROCESADO / "gobierno_nacional.parquet", index=False)
 print("3.8 Guardado:", salida.shape, "->", PROCESADO / "gobierno_nacional.parquet")
