@@ -12,7 +12,12 @@ from streamlit.testing.v1 import AppTest
 app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app" / "app.py"), default_timeout=120)
 app.run()
 cifras = lambda: sum(m.value.count('class="cifra"') for m in app.markdown)   # tarjetas de indicadores de cartera
-print("1. Carga inicial — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric], "| indicadores:", cifras())
+print("1. Carga inicial (debe ser la cartera completa) — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric],
+      "| indicadores:", cifras(), "| brechas en la tarjeta:", [m.value for m in app.markdown if "brechas de servicio distintas" in m.value][:1] != [])
+
+# Pasar al MIDIS para revisar la lista de proyectos
+app.selectbox[0].select("DESARROLLO E INCLUSION SOCIAL").run()
+print("1b. MIDIS — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric])
 
 # La lista de proyectos (la última tabla de la página) y el selector "Ordenar por" (selector [4])
 lista = lambda: app.dataframe[-1].value

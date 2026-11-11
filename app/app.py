@@ -63,8 +63,18 @@ def cargar_indicadores():
     """Una fila por ministerio o entidad, más la fila 'CARTERA COMPLETA' (Proceso 7)."""
     return pd.read_parquet(PROCESADO / "indicadores_cartera.parquet").set_index("sector")
 
+@st.cache_data
+def cargar_brechas():
+    """Todas las brechas de cada proyecto (Proceso 3): una fila por proyecto y brecha, con su aporte y su unidad.
+    Antes: 'PORCENTAJE DE …' en mayúsculas | Después: 'Porcentaje de …' (solo la primera letra en mayúscula)."""
+    b = pd.read_parquet(PROCESADO / "brechas_gobierno_nacional.parquet")
+    b["indicador"] = b["indicador"].str.capitalize()
+    b["unidad_medida"] = b["unidad_medida"].str.lower()
+    return b
+
 inversiones = cargar()
 indicadores = cargar_indicadores()
+brechas_todas = cargar_brechas()
 DIAS_AL_CIERRE = (pd.Timestamp("2026-12-31") - pd.Timestamp("2026-11-10")).days   # misma fecha de referencia que los Procesos 4 y 7
 
 # Nombres que entiende cualquiera, en lugar de los nombres de sector del MEF
@@ -213,9 +223,14 @@ def tablero(clave, cartera):
     st.subheader("¿Cómo está la cartera?")
     fila1, fila2 = st.columns(4), st.columns(3)
 
-    # P1: brechas
-    tarjeta(fila1[0], "¿A qué brechas apuntan?", porc(r["pct_con_brecha"]), "de los proyectos con brecha registrada",
-            [(n_(r["n_varias_brechas"]), "con dos o más brechas")])
+    # P1: brechas. Las de esta cartera: cuántos proyectos apuntan a cada una y cuánto aportan (en la unidad de cada brecha)
+    #   Antes: una fila por proyecto y brecha | Después: una fila por brecha, de la que tiene más proyectos a la que tiene menos
+    b = brechas_todas[brechas_todas["cui"].isin(cartera["cui"])]
+    por_brecha = (b.groupby("indicador").agg(proyectos=("cui", "nunique")).sort_values("proyectos", ascending=False))
+    corto = lambda t: t if len(t) <= 60 else t[:57].rsplit(" ", 1)[0] + "…"
+    tarjeta(fila1[0], "¿A qué brechas apuntan?", n_(len(por_brecha)), "brechas de servicio distintas",
+            [(n_(k), corto(t)) for t, k in por_brecha["proyectos"].head(2).items()]
+            + [(porc(r["pct_con_brecha"]), "de los proyectos con brecha registrada")])
 
     # P2: presupuesto 2026 que falta gastar
     if r["pim_2026"] > 0:
@@ -237,14 +252,16 @@ def tablero(clave, cartera):
         tarjeta(fila1[2], "¿Cuánto cambiaron los costos?", "—", "sin montos para comparar")
 
     # Avance frente a gasto (aproximación al valor ganado): solo proyectos con avance declarado en 2026
+    #   Cifra principal: cuánto avance declaran por cada sol gastado. S/ 1 = avanzan al mismo ritmo que gastan;
+    #   menos de S/ 1 = gastan más rápido de lo que avanzan
     if r["n_comparables_avance"] > 0:
         indice = f"{r['indice_avance_gasto']:.2f}".replace(".", ",")
-        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", n_(r["n_alerta_gasto_avance"]),
-                "con gasto 30 puntos por encima del avance",
-                [(f"S/ {indice}", "de avance por cada sol gastado"),
-                 (n_(r["n_comparables_avance"]), "con avance declarado en 2026")])
+        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", f"S/ {indice}",
+                "de avance declarado por cada sol gastado (S/ 1 = al mismo ritmo)",
+                [(n_(r["n_comparables_avance"]), "con avance declarado en 2026 (base del cálculo)"),
+                 (n_(r["n_alerta_gasto_avance"]), "con gasto 30 puntos o más por encima de su avance")])
     else:
-        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", "—", "nadie declaró su avance en 2026")
+        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", "—", "ningún proyecto declaró su avance en 2026")
 
     # P4: problemas del último reporte de seguimiento (los 3 temas más comunes, con nombre corto)
     con_problemas = cartera[cartera["clase_problema"] == "Reporta problemas"]
@@ -287,6 +304,24 @@ def tablero(clave, cartera):
                                     "Falta ejecutar": millones(r[f"saldo_{k}"])} for g, k in grupos]),
                      hide_index=True, width="stretch")
 
+    # Todas las brechas: cuántos proyectos apuntan a cada una y cuánto aportan entre todos, en la unidad de la brecha
+    #   (personas, establecimientos, locales…). Es el "tamaño" del impacto que registran las entidades.
+    with st.expander("Ver todas las brechas que abordan"):
+        if len(b):
+            aporte = (b.dropna(subset=["aporte"]).groupby(["indicador", "unidad_medida"])["aporte"].sum().reset_index())
+            aporte["texto"] = aporte.apply(lambda f: f"{f['aporte']:,.0f} {f['unidad_medida']}", axis=1)
+            aporte_txt = aporte.groupby("indicador")["texto"].agg("; ".join)
+            tabla_brechas = pd.DataFrame({"Brecha": por_brecha.index, "Proyectos": por_brecha["proyectos"].to_numpy(),
+                                          "Aporte total registrado": [aporte_txt.get(t, "sin dato") for t in por_brecha.index]})
+            st.dataframe(tabla_brechas, hide_index=True, width="stretch",
+                         column_config={"Brecha": st.column_config.TextColumn("Brecha", width="large")})
+            st.caption("Aporte: lo que las entidades registran que cada proyecto aportará para cerrar la brecha "
+                       "(por ejemplo, personas atendidas o establecimientos mejorados), sumado entre proyectos. "
+                       "Puede haber superposición entre proyectos de una misma zona, y algunas sumas no son creíbles por errores de registro "
+                       "(por ejemplo, más establecimientos de salud de los que existen en el país): tómalas como referencia.")
+        else:
+            st.write("Ningún proyecto de esta cartera tiene brechas registradas.")
+
 # ============================================================
 # PASO 5.2: Paso 1 de la página — elegir la cartera completa o un ministerio
 # ============================================================
@@ -296,7 +331,7 @@ st.caption(f"Ministerios y entidades del gobierno nacional · datos del Minister
 TODO = "CARTERA COMPLETA"   # opción especial: todos los ministerios y entidades juntos
 conteo = inversiones.groupby("sector").size().sort_values(ascending=False)
 opciones = [TODO] + list(conteo.index)
-por_defecto = opciones.index("DESARROLLO E INCLUSION SOCIAL") if "DESARROLLO E INCLUSION SOCIAL" in opciones else 0
+por_defecto = 0   # la página abre en la cartera completa
 def reiniciar_filtros():
     """Al cambiar de ministerio, los estados elegidos vuelven a 'Todos los estados' (no se arrastran del ministerio anterior)."""
     for clave in ("estado_ministerio", "estado_unidad"):
