@@ -15,6 +15,7 @@ from pathlib import Path
 import textwrap
 import html
 import pandas as pd
+import pydeck as pdk   # pydeck: mapas interactivos; viene instalado con Streamlit
 import streamlit as st
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -275,26 +276,40 @@ TODO = "CARTERA COMPLETA"   # opción especial: todos los ministerios y entidade
 conteo = inversiones.groupby("sector").size().sort_values(ascending=False)
 opciones = [TODO] + list(conteo.index)
 por_defecto = opciones.index("DESARROLLO E INCLUSION SOCIAL") if "DESARROLLO E INCLUSION SOCIAL" in opciones else 0
-sector = st.selectbox("¿Qué cartera quieres ver?", opciones, index=por_defecto,
+def reiniciar_filtros():
+    """Al cambiar de ministerio, los estados elegidos vuelven a 'Todos los estados' (no se arrastran del ministerio anterior)."""
+    for clave in ("estado_ministerio", "estado_unidad"):
+        st.session_state.pop(clave, None)
+
+sector = st.selectbox("¿Qué cartera quieres ver?", opciones, index=por_defecto, on_change=reiniciar_filtros,
                       format_func=lambda s: f"Cartera completa — {len(inversiones):,} proyectos" if s == TODO
                       else f"{NOMBRES.get(s, s.title())} — {conteo[s]:,} proyectos")
 cartera = inversiones if sector == TODO else inversiones[inversiones["sector"] == sector]
 nombre_sector = NOMBRES.get(sector, sector.title())
 
-c1, c2, c3 = st.columns(3)
-c1.metric("Proyectos", f"{len(cartera):,}")
-c2.metric("Cuestan en total", millones(cartera["costo"].sum()))
-c3.metric("Atrasados", f"{(cartera['estado'] == 'Atrasado').sum():,}")
-st.markdown("".join(chip(e, int((cartera["estado"] == e).sum())) for e in sorted(ESTADOS, key=lambda e: ESTADOS[e][2])),
-            unsafe_allow_html=True)
-tablero(sector, cartera)
+TODOS = "Todos los estados"
+ORDEN_ESTADOS = sorted(ESTADOS, key=lambda e: ESTADOS[e][2])
+
+def elegir_estado(columna, tabla, clave):
+    """Lista de estados con su número de proyectos entre paréntesis; la primera opción es 'Todos los estados'.
+    Antes: la tabla completa | Después: solo las filas del estado elegido (o todas)."""
+    cuenta = tabla["estado"].value_counts()
+    elegido = columna.selectbox("Estado", [TODOS] + ORDEN_ESTADOS, key=clave,
+                                format_func=lambda e: f"{e} ({len(tabla) if e == TODOS else int(cuenta.get(e, 0)):,})")
+    return tabla if elegido == TODOS else tabla[tabla["estado"] == elegido]
 
 # ============================================================
-# PASO 5.2b: Cartera completa — estructura de desglose: "Cartera total" arriba y cada ministerio o entidad debajo,
-#            con su número de proyectos y su costo. En esta vista no se muestran las fichas de los proyectos.
+# PASO 5.2b: NIVEL 1 — Cartera completa (sin cambios): proyectos, costo y atrasados; los indicadores; y la estructura de
+#            desglose: "Cartera total" arriba y cada ministerio o entidad debajo, con su número de proyectos y su costo.
 #   Antes: 12 731 filas (una por proyecto) | Después: 33 cajas (una por ministerio o entidad), de mayor a menor costo
 # ============================================================
 if sector == TODO:
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Proyectos", f"{len(cartera):,}")
+    c2.metric("Cuestan en total", millones(cartera["costo"].sum()))
+    c3.metric("Atrasados", f"{(cartera['estado'] == 'Atrasado').sum():,}")
+    st.markdown("".join(chip(e, int((cartera["estado"] == e).sum())) for e in ORDEN_ESTADOS), unsafe_allow_html=True)
+    tablero(sector, cartera)
     sectores = (inversiones.groupby("sector").agg(n=("id", "size"), costo=("costo", "sum"))
                 .sort_values("costo", ascending=False))
     st.subheader("La cartera por ministerio o entidad")
@@ -308,45 +323,83 @@ if sector == TODO:
     st.stop()   # en la cartera completa la página termina aquí
 
 # ============================================================
-# PASO 5.3: Paso 2 — el árbol: ministerio → unidades ejecutoras (se muestran las 8 con más proyectos)
+# PASO 5.3: NIVEL 2 — Ministerio o entidad: elegir un estado (o todos) y ver cuántos proyectos son y cuánto cuestan.
+#           Debajo, el árbol (ministerio -> sus 8 unidades con más proyectos) y el mapa, ambos con el estado elegido.
 # ============================================================
-unidades = (cartera.groupby("unidad")
-            .agg(n=("id", "size"), atrasados=("estado", lambda s: int((s == "Atrasado").sum())), costo=("costo", "sum"))
-            .sort_values("n", ascending=False))
+st.subheader(nombre_sector)
+m1, m2, m3 = st.columns([1.6, 1, 1.2])
+cartera_estado = elegir_estado(m1, cartera, "estado_ministerio")
+m2.metric("Proyectos", f"{len(cartera_estado):,}")
+m3.metric("Cuestan en total", millones(cartera_estado["costo"].sum()))
 
 def etiqueta(texto, ancho=26):
     return "\\n".join(textwrap.wrap(texto.replace('"', "'"), ancho))
 
-nodos = [f'raiz [label="{etiqueta(nombre_sector, 34)}\\n{plural(len(cartera), "proyecto")}", shape=box, style="rounded,filled", fillcolor="#e9eef8", color="#103f91", fontname="Helvetica"];']
-# itertuples() conserva los números enteros; iterrows() los convertía en decimales (715 -> "715.0")
-for i, u in enumerate(unidades.head(8).itertuples()):
-    borde = "#d03b3b" if u.atrasados else "#9aa0a6"
-    atrasos = "ninguno atrasado" if u.atrasados == 0 else plural(u.atrasados, "atrasado")
-    nodos.append(f'u{i} [label="{etiqueta(u.Index.title())}\\n{plural(u.n, "proyecto")} · {atrasos}", '
-                 f'shape=box, style="rounded", color="{borde}", fontname="Helvetica", fontsize=11];')
-    nodos.append(f"raiz -> u{i};")
-if len(unidades) > 8:
-    nodos.append(f'otras [label="Otras {len(unidades) - 8} unidades", shape=box, style="rounded,dashed", color="#9aa0a6", fontname="Helvetica", fontsize=11];')
-    nodos.append("raiz -> otras;")
-with st.expander("Árbol de la cartera", expanded=True):
-    st.graphviz_chart("digraph { rankdir=TB; node [margin=\"0.15,0.08\"]; edge [color=\"#9aa0a6\", arrowhead=none]; " + " ".join(nodos) + " }",
-                      width="stretch")
+def rgb(hexa, alfa=210):
+    """'#d03b3b' -> [208, 59, 59, 210]: el formato de color que usa el mapa."""
+    return [int(hexa[i:i + 2], 16) for i in (1, 3, 5)] + [alfa]
+
+tab_arbol, tab_mapa = st.tabs(["Árbol de la cartera", "Mapa: ¿dónde están?"])
+with tab_arbol:
+    # Árbol con el estado elegido. Antes: filas de proyectos | Después: una caja por unidad con su número de proyectos y su costo
+    unidades_estado = (cartera_estado.groupby("unidad")
+                       .agg(n=("id", "size"), atrasados=("estado", lambda s: int((s == "Atrasado").sum())), costo=("costo", "sum"))
+                       .sort_values("n", ascending=False))
+    nodos = [f'raiz [label="{etiqueta(nombre_sector, 34)}\\n{plural(len(cartera_estado), "proyecto")} · {millones(cartera_estado["costo"].sum())}", '
+             f'shape=box, style="rounded,filled", fillcolor="#e9eef8", color="#103f91", fontname="Helvetica"];']
+    # itertuples() conserva los números enteros; iterrows() los convertía en decimales (715 -> "715.0")
+    for i, u in enumerate(unidades_estado.head(8).itertuples()):
+        borde = "#d03b3b" if u.atrasados else "#9aa0a6"
+        nodos.append(f'u{i} [label="{etiqueta(u.Index.title())}\\n{plural(u.n, "proyecto")} · {millones(u.costo)}", '
+                     f'shape=box, style="rounded", color="{borde}", fontname="Helvetica", fontsize=11];')
+        nodos.append(f"raiz -> u{i};")
+    if len(unidades_estado) > 8:
+        nodos.append(f'otras [label="Otras {len(unidades_estado) - 8} unidades", shape=box, style="rounded,dashed", '
+                     f'color="#9aa0a6", fontname="Helvetica", fontsize=11];')
+        nodos.append("raiz -> otras;")
+    st.graphviz_chart("digraph { rankdir=TB; node [margin=\"0.15,0.08\"]; edge [color=\"#9aa0a6\", arrowhead=none]; "
+                      + " ".join(nodos) + " }", width="stretch")
     st.caption("En rojo, las unidades con al menos un proyecto atrasado.")
 
+with tab_mapa:
+    # Mapa (versión rápida, con pydeck, que viene con Streamlit): un punto por proyecto con coordenadas, del color de su estado.
+    #   Antes: lat y lon de cada proyecto | Después: puntos en el mapa del Perú; al pasar el cursor, nombre, estado, costo y avance
+    puntos = cartera_estado.dropna(subset=["lat", "lon"])
+    if len(puntos):
+        datos_mapa = pd.DataFrame({
+            "lat": puntos["lat"], "lon": puntos["lon"], "color": puntos["estado"].map(lambda e: rgb(ESTADOS[e][0])),
+            "titulo": puntos["que_es"].str.slice(0, 90), "estado": puntos["estado"],
+            "costo": puntos["costo"].map(millones), "avance": puntos["avance"].map(lambda a: f"{a:.0f} % de avance")})
+        capa = pdk.Layer("ScatterplotLayer", data=datos_mapa, get_position=["lon", "lat"], get_fill_color="color",
+                         get_radius=3000, radius_min_pixels=4, radius_max_pixels=12, pickable=True,
+                         stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1)
+        st.pydeck_chart(pdk.Deck(layers=[capa], map_provider="carto", map_style="light",
+                                 initial_view_state=pdk.ViewState(latitude=-9.6, longitude=-75.0, zoom=4.2),
+                                 tooltip={"html": "<b>{titulo}</b><br/>{estado} · {costo} · {avance}"}), height=480)
+        # Leyenda: el color siempre va con el nombre del estado y su símbolo
+        st.markdown("".join(chip(e, int((puntos["estado"] == e).sum())) for e in ORDEN_ESTADOS if (puntos["estado"] == e).any()),
+                    unsafe_allow_html=True)
+    st.caption(f"{len(puntos):,} de {len(cartera_estado):,} proyectos tienen coordenadas. La ubicación la registra la entidad; "
+               "a veces es la de su oficina y no la de la obra.")
+
+tablero(sector, cartera)
+
 # ============================================================
-# PASO 5.4: Elegir unidad, estado y búsqueda; mostrar los proyectos como tarjetas
+# PASO 5.4: NIVEL 3 — Unidad ejecutora: elegir una unidad (o todas) y un estado (o todos); ver cuántos proyectos son y cuánto
+#           cuestan; buscar y filtrar; y mostrar los proyectos como tarjetas (el nivel 4 es la ficha de cada uno)
 # ============================================================
-f1, f2, f3 = st.columns([2, 2, 1.4])
+st.subheader("Unidades ejecutoras y sus proyectos")
+unidades = cartera.groupby("unidad").size().sort_values(ascending=False)
+f1, f2, f3, f4 = st.columns([2.2, 1.6, 0.9, 1.2])
 lista_unidades = ["Todas las unidades"] + list(unidades.index)
 unidad = f1.selectbox("Unidad ejecutora", lista_unidades,
-                      format_func=lambda u: u if u == "Todas las unidades" else f"{u.title()} — {unidades.loc[u, 'n']:,}")
-estados_elegidos = f2.multiselect("Estado", sorted(ESTADOS, key=lambda e: ESTADOS[e][2]), placeholder="Todos los estados")
-busqueda = f3.text_input("Buscar", placeholder="Nombre, lugar o CUI")
-solo_alerta = st.toggle("Solo los que gastaron 30 puntos o más por encima de lo que declaran haber avanzado")
-
+                      format_func=lambda u: u if u == "Todas las unidades" else f"{u.title()} — {unidades[u]:,}")
 vista = cartera if unidad == "Todas las unidades" else cartera[cartera["unidad"] == unidad]
-if estados_elegidos:
-    vista = vista[vista["estado"].isin(estados_elegidos)]
+vista = elegir_estado(f2, vista, "estado_unidad")
+b1, b2 = st.columns([1, 2])
+busqueda = b1.text_input("Buscar", placeholder="Nombre, lugar o CUI")
+b2.write("")
+solo_alerta = b2.toggle("Solo los que gastaron 30 puntos o más por encima de lo que declaran haber avanzado")
 if solo_alerta:
     vista = vista[vista["alerta_gasto_avance"].fillna(False).astype(bool)]
 if busqueda:
@@ -354,6 +407,9 @@ if busqueda:
     vista = vista[vista["que_es"].str.lower().str.contains(q, regex=False) | vista["lugar"].str.lower().str.contains(q, regex=False)
                   | vista["id"].str.contains(q, regex=False)]
 vista = vista.assign(_orden=vista["estado"].map(lambda e: ESTADOS[e][2])).sort_values(["_orden", "costo"], ascending=[True, False])
+# Las cifras del nivel 3 van junto a los selectores, ya con todos los filtros aplicados
+f3.metric("Proyectos", f"{len(vista):,}")
+f4.metric("Cuestan en total", millones(vista["costo"].sum()))
 
 # ============================================================
 # PASO 5.5: Paso 3 — la ficha de cinco preguntas (ventana emergente)
@@ -434,7 +490,8 @@ def ficha(fila):
                 if fila[col]:
                     st.markdown(f"*{etq}:* {fila[col][:600]}")
 
-st.subheader(plural(len(vista), "proyecto") + ("" if unidad == "Todas las unidades" else f" de {unidad.title()}"))
+st.caption(plural(len(vista), "proyecto") + ("" if unidad == "Todas las unidades" else f" de {unidad.title()}")
+           + ". Abre la ficha de cualquiera para ver sus preguntas.")
 if "mostrar" not in st.session_state:
     st.session_state.mostrar = 24
 columnas = st.columns(3)

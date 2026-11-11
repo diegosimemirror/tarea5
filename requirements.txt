@@ -2,3 +2,4 @@
 streamlit>=1.40   # convierte la app de Python en una página web
 pandas>=2.2       # tablas: leer, filtrar, unir y resumir datos
 pyarrow>=15       # leer y guardar archivos parquet (formato liviano para tablas)
+pydeck>=0.8       # mapa interactivo de los proyectos (viene con Streamlit)
