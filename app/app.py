@@ -339,8 +339,8 @@ def rgb(hexa, alfa=210):
     """'#d03b3b' -> [208, 59, 59, 210]: el formato de color que usa el mapa."""
     return [int(hexa[i:i + 2], 16) for i in (1, 3, 5)] + [alfa]
 
-tab_arbol, tab_mapa = st.tabs(["Árbol de la cartera", "Mapa: ¿dónde están?"])
-with tab_arbol:
+# El árbol y el mapa se ven uno debajo del otro (sin pestañas, para que el mapa no quede escondido)
+with st.expander("Árbol de la cartera", expanded=True):
     # Árbol con el estado elegido. Antes: filas de proyectos | Después: una caja por unidad con su número de proyectos y su costo
     unidades_estado = (cartera_estado.groupby("unidad")
                        .agg(n=("id", "size"), atrasados=("estado", lambda s: int((s == "Atrasado").sum())), costo=("costo", "sum"))
@@ -361,7 +361,7 @@ with tab_arbol:
                       + " ".join(nodos) + " }", width="stretch")
     st.caption("En rojo, las unidades con al menos un proyecto atrasado.")
 
-with tab_mapa:
+with st.expander("Mapa: ¿dónde están los proyectos?", expanded=True):
     # Mapa (versión rápida, con pydeck, que viene con Streamlit): un punto por proyecto con coordenadas, del color de su estado.
     #   Antes: lat y lon de cada proyecto | Después: puntos en el mapa del Perú; al pasar el cursor, nombre, estado, costo y avance
     puntos = cartera_estado.dropna(subset=["lat", "lon"])
