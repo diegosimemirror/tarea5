@@ -62,7 +62,7 @@ Busco facilitar la comunicación de información densa para la toma de decisione
     C --> D[App web en Streamlit]
     D --> E[Persona en el navegador]
   ```
-- **Modelos y APIs:** API pública de Datos Abiertos del MEF. El LLM para redactar está **POR COMPLETAR**, según la API que se elija; ver la sección 8.
+- **Modelos y APIs:** API pública de Datos Abiertos del MEF (los datos) y **Gemini 3.5 Flash-Lite** de Google (los títulos de alcance: resume la descripción técnica de cada proyecto en una línea). Se eligió por ser el modelo de Google para tareas masivas y baratas, con nivel gratuito; la IA corre una sola vez por actualización de datos, no cada vez que alguien abre la app.
 
 ## 7. Modelo de negocio
 
@@ -111,7 +111,7 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 |---|---|---|---|
 | Scraping y APIs (datos abiertos) | 03 | `scripts/01_descargar.py` | Los datos de inversión pública ya existen y son públicos: el valor está en traerlos solos y al día, no en digitarlos. |
 | Dashboards | 05 | `app/app.py` | La usuaria es la alta dirección: necesita ver su cartera en una pantalla, en el navegador, sin instalar nada. |
-| LLMs con salidas estructuradas | 08 | `scripts/06_ia.py` (código listo, **todavía sin activar**: falta elegir proveedor y poner la clave) | Para redactar en simple los textos técnicos y clasificar los problemas, con salida en JSON para revisar cada campo. Mientras no esté activa, no se cuenta entre las dos herramientas del producto. |
+| LLMs con salidas estructuradas | 08 | `scripts/06_ia.py` → `data/procesado/ia_titulos.parquet` (en prueba: MIDIS y RENIEC) | El nombre oficial de un proyecto casi nunca dice qué hace. La IA lo resume desde la descripción técnica del MEF en un título de una línea, con salida en JSON y un control automático: si el título trae una cifra que no está en el texto del MEF, se descarta. |
 
 ## 9. Qué hizo el agente
 

@@ -37,8 +37,18 @@ INSTRUCCIONES = (
     "descripción técnica. Escribe UN título de una sola línea, de máximo 15 palabras, que diga qué hace el proyecto y, "
     "si la descripción lo dice, cuánto (cantidades) y dónde (lugares). Empieza con un verbo en presente: Construye, "
     "Mejora, Amplía, Equipa, Instala, Abre, Renueva, Repone, Adquiere. "
+    "El título debe combinar dos cosas: (1) las ACCIONES CONCRETAS que detalla la descripción (qué se construye, equipa, "
+    "instala o implementa, con sus cantidades si las hay: cuántos locales, aulas, ventanillas, kilómetros, equipos) y "
+    "(2) el servicio o la instalación en palabras comunes (centro infantil, posta de salud, hospital, colegio, sistema de "
+    "agua potable, carretera, oficinas de atención). No repitas ni parafrasees el nombre oficial: di lo que la "
+    "descripción detalla. Escribe las siglas con su significado (CIAI = centro infantil; EESS = establecimiento de salud; "
+    "IE = colegio). Ejemplos inventados: descripción 'Construcción de 12 aulas, 1 laboratorio y servicios higiénicos; "
+    "adquisición de mobiliario' con nombre 'Mejoramiento del servicio educativo de la IE 123 de Ayaviri' -> 'Construye "
+    "12 aulas y un laboratorio y equipa el colegio 123 de Ayaviri'; descripción 'Implementación de 5 módulos de atención "
+    "y equipamiento informático en las sedes de Puno y Juliaca' -> 'Implementa 5 módulos de atención y equipa con "
+    "computadoras las sedes de Puno y Juliaca'. "
     "Reglas: usa SOLO la información dada; no inventes cifras, lugares ni beneficiarios; copia las cifras tal como "
-    "aparecen; no uses siglas ni términos técnicos (PIP, IOARR, UEI, expediente, componente). Si la descripción no "
+    "aparecen, sin sumarlas; no uses términos técnicos (PIP, IOARR, UEI, expediente, componente). Si la descripción no "
     "permite saber qué hace el proyecto, devuelve el título vacío. "
     'Responde solo con JSON: {"titulos": [{"id": "...", "titulo": "..."}]}, con un elemento por proyecto recibido.'
 )
@@ -59,8 +69,9 @@ def paquete(filas):
                        for _, f in filas.iterrows()], ensure_ascii=False)
 
 def cifras(texto):
-    """Números que aparecen en un texto, sin separadores. 'Abre 1,200 puntos y 31 ventanillas' -> {'1200', '31'}."""
-    return {re.sub(r"[.,]", "", n) for n in re.findall(r"\d[\d.,]*\d|\d", texto)}
+    """Números que aparecen en un texto, sin separadores ni ceros a la izquierda.
+    'Abre 1,200 puntos y 02 ventanillas' -> {'1200', '2'} (así '02' en el MEF y '2' en el título son la misma cifra)."""
+    return {re.sub(r"[.,]", "", n).lstrip("0") or "0" for n in re.findall(r"\d[\d.,]*\d|\d", texto)}
 
 def valido(titulo, fuente):
     """Control automático: el título no está vacío, es corto y todas sus cifras están en el texto del MEF."""
@@ -80,6 +91,7 @@ def main():
     p.add_argument("--sector", nargs="*", help='Uno o más sectores tal como los escribe el MEF; sin esta opción, todos')
     p.add_argument("--limite", type=int, default=200, help="Máximo de proyectos a procesar en esta corrida (tope de gasto)")
     p.add_argument("--ensayo", action="store_true", help="Muestra lo que se enviaría, sin llamar a la IA")
+    p.add_argument("--rehacer", action="store_true", help="Vuelve a procesar los proyectos elegidos aunque ya tengan título")
     a = p.parse_args()
 
     # Proyectos con una descripción útil (más de 30 caracteres), de mayor a menor costo
@@ -88,6 +100,8 @@ def main():
     if a.sector:
         base = base[base["sector"].isin(a.sector)]
     previas = pd.read_parquet(SALIDA) if SALIDA.exists() else pd.DataFrame(columns=["id", "titulo_ia", "modelo", "fecha"])
+    if a.rehacer:   # se olvidan los títulos anteriores de los proyectos elegidos, para escribirlos de nuevo
+        previas = previas[~previas["id"].isin(base["id"])]
     pendientes = base[~base["id"].isin(previas["id"])].sort_values("costo", ascending=False).head(a.limite)
     print(f"Con descripción: {len(base):,} · ya procesados: {base['id'].isin(previas['id']).sum():,} · en esta corrida: {len(pendientes):,}")
 
@@ -124,6 +138,8 @@ def main():
                 nuevas.append({"id": f["id"], "titulo_ia": t.rstrip("."), "modelo": modelo, "fecha": str(date.today())})
             else:
                 rechazados += 1
+                sobran = cifras(t) - cifras(f"{f['alternativa']} {f['nombre']}")
+                print(f"    descartado {f['id']}: «{t}»" + (f" (cifras que no están en el MEF: {', '.join(sorted(sobran))})" if sobran else ""))
         print(f"  {inicio + len(grupo):,} de {len(pendientes):,} enviados")
         time.sleep(2)
 
