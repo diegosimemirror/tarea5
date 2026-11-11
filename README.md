@@ -18,7 +18,10 @@
   - Los informes de seguimiento son textos largos que no dejan ver el conjunto.
 - **Cuánto pesa:** el gobierno nacional tiene **12 731 inversiones activas por S/ 621 mil millones**. Con nuestras reglas, **3 380 están atrasadas** según sus propias fechas registradas.
 - **Cómo lo resuelven hoy:** abren el SSI ficha por ficha, piden un Excel a la OPMI o leen informes.
-- **Evidencia:** notas de 3 conversaciones en [`docs/research/`](docs/research/). **POR COMPLETAR.**
+- **Evidencia:** notas de 3 conversaciones en [`docs/research/`](docs/research/). Las dos primeras son anteriores a la app y están reconstruidas de memoria:
+  - **2019, asesores de la OPMI de un ministerio del sector salud** ([nota 1](docs/research/01_conversacion.md)): para seguir las obras del Bicentenario era difícil tener al día una matriz con ejecución, ubicación, problemas y riesgos.
+  - **2023, la banca multilateral con la alta dirección de un ministerio del sector salud** ([nota 2](docs/research/02_conversacion.md)): lo primero que pidió fue una cartera de proyectos visible y ordenable por temas. No se pudo mostrar en la reunión: se armó después, en Excel que se actualizaban uno sobre otro.
+  - **Conversación 3, con la app:** **POR COMPLETAR.**
 
 ## 4. Solución e insight
 

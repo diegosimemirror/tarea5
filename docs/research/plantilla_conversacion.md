@@ -13,7 +13,7 @@
 - ¿Tomó alguna decisión tarde o con información incompleta por eso?
 
 ## 3. Reacción a la versión 1 (mostrar la app al final, no antes)
-- ¿Entiende las cinco respuestas sin ayuda? ¿Qué palabra no entendió?
+- ¿Entiende sin ayuda los indicadores de la cartera ("¿Cómo está la cartera?") y las siete preguntas de la ficha? ¿Qué palabra no entendió?
 - ¿Qué le faltó? ¿Qué le sobró?
 - ¿Quién en su organización pagaría por esto? ¿Cuánto paga hoy por algo parecido (consultorías, horas de especialistas)?
 
