@@ -1,10 +1,10 @@
-# [Nombre por definir] · Cartera de inversiones del Estado, en simple
+# Portafolio de proyectos del Estado · La cartera de inversiones, en simple
 
-> Borrador del 10/11/2026. Las partes marcadas **POR COMPLETAR** las escribe el founder.
+> **Demo en vivo:** https://proyectos-inversiones-peru.streamlit.app/ · Versión del 10/11/2026. Las partes marcadas **POR COMPLETAR** las escribe el founder.
 
 ## 1. One-liner
 
-**Hacemos que cualquier persona entienda en un minuto cómo van los proyectos de inversión de un ministerio, para quienes deciden o supervisan sin ser especialistas en Invierte.pe, traduciendo los datos abiertos del MEF a cinco preguntas simples.**
+**Simplificamos la lectura de cómo van los proyectos de inversión del Estado, para quienes deciden o supervisan sin ser especialistas en Invierte.pe, traduciendo los datos abiertos del MEF a preguntas simples, indicadores de cartera y un mapa.**
 
 ## 2. Founder
 
@@ -39,7 +39,7 @@
 
 ## 6. Demo
 
-- **URL pública:** **POR COMPLETAR** (Streamlit Community Cloud).
+- **URL pública:** https://proyectos-inversiones-peru.streamlit.app/ (Streamlit Community Cloud, gratis). Para abrir directamente la ficha de un proyecto: `https://proyectos-inversiones-peru.streamlit.app/?ficha=CUI` (por ejemplo, `?ficha=2613205`).
 - **Correr en local:**
   ```bash
   pip install -r requirements.txt

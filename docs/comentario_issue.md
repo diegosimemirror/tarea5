@@ -1,10 +1,11 @@
-# Texto para pegar en el issue #204 (completar los corchetes antes de publicar)
+# Comentario publicado en el issue #204 (10/11/2026, 11:47 p. m.)
 
 ```
-Nombre: Diego Sime
-Startup y one-liner: [Nombre] — Hacemos que cualquier persona entienda en un minuto cómo van los proyectos de inversión de un ministerio, para quienes deciden o supervisan sin ser especialistas en Invierte.pe, traduciendo los datos abiertos del MEF a cinco preguntas simples.
-Link del demo: [URL pública de Streamlit, o "corre en local"]
+Nombre: Diego Sime Rendón
+Startup y one-liner: Portafolio de proyectos del Estado — Simplificamos la lectura de cómo van los proyectos de inversión del Estado, para quienes deciden o supervisan sin ser especialistas en Invierte.pe, traduciendo los datos abiertos del MEF a preguntas simples, indicadores de cartera y un mapa.
+Link del demo: https://proyectos-inversiones-peru.streamlit.app/
 Link del repo: https://github.com/diegosimemirror/tarea5
-Herramientas del curso que usa: datos abiertos y APIs del MEF (sesión 03), dashboard en Streamlit (sesión 05), LLM con salidas estructuradas (sesión 08)
-Video de respaldo: [enlace, o "en preparación"]
+Herramientas del curso que usa: Scraping y APIs (03), para descargar los datos abiertos del MEF (scripts/01_descargar.py); Dashboards (05), con la app web en Streamlit (app/app.py)
 ```
+
+Pendiente: agregar la línea `Video de respaldo:` que pide la plantilla, con el enlace al video cuando esté grabado.
