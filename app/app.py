@@ -325,7 +325,7 @@ if sector == TODO:
 
 # ============================================================
 # PASO 5.3: NIVEL 2 — Ministerio o entidad: elegir un estado (o todos) y ver cuántos proyectos son y cuánto cuestan.
-#           Debajo, el árbol (ministerio -> sus 8 unidades con más proyectos) con el estado elegido. El mapa va al final (PASO 5.4c).
+#           Debajo, el árbol (ministerio -> sus 6 unidades con más proyectos) con el estado elegido. El mapa va al final (PASO 5.4c).
 # ============================================================
 st.subheader(nombre_sector)
 m1, m2, m3 = st.columns([1.6, 1, 1.2])
@@ -346,21 +346,35 @@ with st.expander("Árbol de la cartera", expanded=True):
     unidades_estado = (cartera_estado.groupby("unidad")
                        .agg(n=("id", "size"), atrasados=("estado", lambda s: int((s == "Atrasado").sum())), costo=("costo", "sum"))
                        .sort_values("n", ascending=False))
-    nodos = [f'raiz [label="{etiqueta(nombre_sector, 34)}\\n{plural(len(cartera_estado), "proyecto")} · {millones(cartera_estado["costo"].sum())}", '
-             f'shape=box, style="rounded,filled", fillcolor="#e9eef8", color="#103f91", fontname="Helvetica"];']
+    # Tamaño homogéneo: todas las cajas miden lo mismo (fixedsize) y el árbol tiene SIEMPRE 7 espacios (6 unidades + "Otras").
+    # Si hay menos unidades, los espacios que sobran se dibujan invisibles a ambos lados. Así, al estirarse al ancho de la
+    # página, la escala es la misma con 7 unidades que con 2, y las cajas no se agrandan.
+    ESPACIOS, UNIDADES_VISIBLES = 7, 6
+    # Letra grande (16) porque el árbol se reduce al estirarse a 7 espacios; nombre en hasta 3 líneas, y número y costo aparte
+    CAJA = 'shape=box, fixedsize=true, width=1.75, height=1.4, fontname="Helvetica", fontsize=16'
+    etiqueta_caja = lambda t: "\\n".join(textwrap.wrap(t.replace('"', "'"), 15, max_lines=3, placeholder="…"))
+    nodos = [f'raiz [label="{etiqueta(nombre_sector, 30)}\\n{plural(len(cartera_estado), "proyecto")}\\n{millones(cartera_estado["costo"].sum())}", '
+             f'shape=box, fixedsize=true, width=3.4, height=1.25, style="rounded,filled", fillcolor="#e9eef8", color="#103f91", '
+             f'fontname="Helvetica", fontsize=15];']
+    hijos = []
     # itertuples() conserva los números enteros; iterrows() los convertía en decimales (715 -> "715.0")
-    for i, u in enumerate(unidades_estado.head(8).itertuples()):
+    for i, u in enumerate(unidades_estado.head(UNIDADES_VISIBLES).itertuples()):
         borde = "#d03b3b" if u.atrasados else "#9aa0a6"
-        nodos.append(f'u{i} [label="{etiqueta(u.Index.title())}\\n{plural(u.n, "proyecto")} · {millones(u.costo)}", '
-                     f'shape=box, style="rounded", color="{borde}", fontname="Helvetica", fontsize=11];')
-        nodos.append(f"raiz -> u{i};")
-    if len(unidades_estado) > 8:
-        nodos.append(f'otras [label="Otras {len(unidades_estado) - 8} unidades", shape=box, style="rounded,dashed", '
-                     f'color="#9aa0a6", fontname="Helvetica", fontsize=11];')
-        nodos.append("raiz -> otras;")
-    st.graphviz_chart("digraph { rankdir=TB; node [margin=\"0.15,0.08\"]; edge [color=\"#9aa0a6\", arrowhead=none]; "
+        hijos.append((f"u{i}", f'label="{etiqueta_caja(u.Index.title())}\\n{plural(u.n, "proyecto")}\\n{millones(u.costo)}", '
+                               f'{CAJA}, style="rounded", color="{borde}"'))
+    if len(unidades_estado) > UNIDADES_VISIBLES:
+        resto = unidades_estado.iloc[UNIDADES_VISIBLES:]
+        hijos.append(("otras", f'label="Otras {len(resto)}\\nunidades\\n{plural(resto["n"].sum(), "proyecto")}\\n{millones(resto["costo"].sum())}", '
+                               f'{CAJA}, style="rounded,dashed", color="#9aa0a6"'))
+    sobran = ESPACIOS - len(hijos)
+    vacios = [(f"vacio{i}", f'label="", {CAJA}, style=invis') for i in range(sobran)]
+    # Orden de izquierda a derecha: la mitad de los vacíos, las unidades reales y la otra mitad (así quedan centradas)
+    for nombre, atributos in vacios[:sobran // 2] + hijos + vacios[sobran // 2:]:
+        nodos.append(f"{nombre} [{atributos}];")
+        nodos.append(f"raiz -> {nombre}" + (" [style=invis];" if nombre.startswith("vacio") else ";"))
+    st.graphviz_chart("digraph { rankdir=TB; ordering=out; nodesep=0.15; edge [color=\"#9aa0a6\", arrowhead=none]; "
                       + " ".join(nodos) + " }", width="stretch")
-    st.caption("En rojo, las unidades con al menos un proyecto atrasado.")
+    st.caption("En rojo, las unidades con al menos un proyecto atrasado. Se muestran las 6 unidades con más proyectos; el resto va en «Otras unidades».")
 
 tablero(sector, cartera)
 
