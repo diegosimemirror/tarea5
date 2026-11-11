@@ -516,31 +516,31 @@ tabla = pd.DataFrame({
 })
 if unidad == "Todas las unidades":
     tabla["Unidad ejecutora"] = vista["unidad"].str.title()
-# La clave cambia con los filtros: así, al filtrar u ordenar, la lista empieza sin ninguna fila marcada
-clave_lista = "lista_" + str(abs(hash((sector, unidad, len(vista), orden, busqueda, solo_alerta, tuple(vista["id"].head(3))))))
-seleccion = st.dataframe(
-    tabla, hide_index=True, width="stretch", height=min(38 + 35 * len(tabla), 460),
-    on_select="rerun", selection_mode="single-row", key=clave_lista,
+# Primera columna: una casilla "Ver ficha" en cada fila; al marcarla se abre la ficha de ese proyecto
+tabla.insert(0, "Ficha", False)
+# La clave cambia con los filtros y después de abrir cada ficha: así la lista vuelve a mostrarse sin casillas marcadas
+version = st.session_state.get("version_lista", 0)
+clave_lista = f"lista_{version}_" + str(abs(hash((sector, unidad, len(vista), orden, busqueda, solo_alerta, tuple(vista["id"].head(3))))))
+editada = st.data_editor(
+    tabla, hide_index=True, width="stretch", height=min(38 + 35 * len(tabla), 460), key=clave_lista,
+    disabled=[c for c in tabla.columns if c != "Ficha"],          # solo se puede marcar "Ver ficha"; los datos no se editan
     column_config={
+        "Ficha": st.column_config.CheckboxColumn("Ver ficha", help="Marca la casilla para abrir la ficha del proyecto", width=90),
         "Proyecto": st.column_config.TextColumn("Proyecto", width="large"),
         "Costo (S/)": st.column_config.NumberColumn("Costo (S/)", format="localized"),
         "Avance": st.column_config.ProgressColumn("Avance", min_value=0, max_value=100, format="%.0f%%"),
         "Atraso (meses)": st.column_config.NumberColumn("Atraso (meses)", format="%d"),
     })
 st.caption(plural(len(vista), "proyecto") + ("" if unidad == "Todas las unidades" else f" de {unidad.title()}")
-           + ". Haz clic en una fila para abrir la ficha del proyecto.")
+           + ". Marca «Ver ficha» en una fila para abrir la ficha del proyecto.")
 
-# Abrir la ficha de la fila marcada (solo cuando cambia la fila, para no reabrirla en cada clic de la página)
-filas = seleccion.selection.rows
+# Abrir la ficha de la fila marcada. La tabla conserva el índice de 'vista', así que se busca la fila por ese índice.
+marcadas = editada.index[editada["Ficha"]].tolist()
 abierta = False                      # solo se puede abrir una ficha (ventana) a la vez
-if filas:
-    fila = vista.iloc[filas[0]]
-    if st.session_state.get("ficha_abierta") != fila["id"]:
-        st.session_state["ficha_abierta"] = fila["id"]
-        ficha(fila)
-        abierta = True
-else:
-    st.session_state["ficha_abierta"] = None
+if marcadas:
+    st.session_state["version_lista"] = version + 1     # la próxima vez la lista aparece sin la casilla marcada
+    ficha(vista.loc[marcadas[0]])
+    abierta = True
 
 # Enlace directo a una ficha: http://localhost:8501/?ficha=CUI (sirve para compartir un proyecto y para la prueba automática)
 pedido = st.query_params.get("ficha")
