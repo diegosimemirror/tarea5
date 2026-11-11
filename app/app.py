@@ -325,7 +325,7 @@ if sector == TODO:
 
 # ============================================================
 # PASO 5.3: NIVEL 2 — Ministerio o entidad: elegir un estado (o todos) y ver cuántos proyectos son y cuánto cuestan.
-#           Debajo, el árbol (ministerio -> sus 8 unidades con más proyectos) y el mapa, ambos con el estado elegido.
+#           Debajo, el árbol (ministerio -> sus 8 unidades con más proyectos) con el estado elegido. El mapa va al final (PASO 5.4c).
 # ============================================================
 st.subheader(nombre_sector)
 m1, m2, m3 = st.columns([1.6, 1, 1.2])
@@ -340,7 +340,7 @@ def rgb(hexa, alfa=210):
     """'#d03b3b' -> [208, 59, 59, 210]: el formato de color que usa el mapa."""
     return [int(hexa[i:i + 2], 16) for i in (1, 3, 5)] + [alfa]
 
-# El árbol y el mapa se ven uno debajo del otro (sin pestañas, para que el mapa no quede escondido)
+# Árbol del ministerio con el estado elegido
 with st.expander("Árbol de la cartera", expanded=True):
     # Árbol con el estado elegido. Antes: filas de proyectos | Después: una caja por unidad con su número de proyectos y su costo
     unidades_estado = (cartera_estado.groupby("unidad")
@@ -361,27 +361,6 @@ with st.expander("Árbol de la cartera", expanded=True):
     st.graphviz_chart("digraph { rankdir=TB; node [margin=\"0.15,0.08\"]; edge [color=\"#9aa0a6\", arrowhead=none]; "
                       + " ".join(nodos) + " }", width="stretch")
     st.caption("En rojo, las unidades con al menos un proyecto atrasado.")
-
-with st.expander("Mapa: ¿dónde están los proyectos?", expanded=True):
-    # Mapa (versión rápida, con pydeck, que viene con Streamlit): un punto por proyecto con coordenadas, del color de su estado.
-    #   Antes: lat y lon de cada proyecto | Después: puntos en el mapa del Perú; al pasar el cursor, nombre, estado, costo y avance
-    puntos = cartera_estado.dropna(subset=["lat", "lon"])
-    if len(puntos):
-        datos_mapa = pd.DataFrame({
-            "lat": puntos["lat"], "lon": puntos["lon"], "color": puntos["estado"].map(lambda e: rgb(ESTADOS[e][0])),
-            "titulo": puntos["que_es"].str.slice(0, 90), "estado": puntos["estado"],
-            "costo": puntos["costo"].map(millones), "avance": puntos["avance"].map(lambda a: f"{a:.0f} % de avance")})
-        capa = pdk.Layer("ScatterplotLayer", data=datos_mapa, get_position=["lon", "lat"], get_fill_color="color",
-                         get_radius=3000, radius_min_pixels=4, radius_max_pixels=12, pickable=True,
-                         stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1)
-        st.pydeck_chart(pdk.Deck(layers=[capa], map_provider="carto", map_style="light",
-                                 initial_view_state=pdk.ViewState(latitude=-9.6, longitude=-75.0, zoom=4.2),
-                                 tooltip={"html": "<b>{titulo}</b><br/>{estado} · {costo} · {avance}"}), height=480)
-        # Leyenda: el color siempre va con el nombre del estado y su símbolo
-        st.markdown("".join(chip(e, int((puntos["estado"] == e).sum())) for e in ORDEN_ESTADOS if (puntos["estado"] == e).any()),
-                    unsafe_allow_html=True)
-    st.caption(f"{len(puntos):,} de {len(cartera_estado):,} proyectos tienen coordenadas. La ubicación la registra la entidad; "
-               "a veces es la de su oficina y no la de la obra.")
 
 tablero(sector, cartera)
 
@@ -549,6 +528,31 @@ if pedido and not abierta and st.session_state.get("ficha_enlace") != pedido:
     if len(encontrados):
         st.session_state["ficha_enlace"] = pedido
         ficha(encontrados.iloc[0])
+
+# ============================================================
+# PASO 5.4c: Mapa (versión rápida, con pydeck, que viene con Streamlit), al final de la página.
+#   Muestra los mismos proyectos de la lista (con su unidad, estado, búsqueda y filtro): un punto por proyecto con
+#   coordenadas, del color de su estado. Antes: lat y lon de cada proyecto | Después: puntos en el mapa del Perú;
+#   al pasar el cursor, nombre, estado, costo y avance
+# ============================================================
+with st.expander("Mapa: ¿dónde están los proyectos de la lista?", expanded=True):
+    puntos = vista.dropna(subset=["lat", "lon"])
+    if len(puntos):
+        datos_mapa = pd.DataFrame({
+            "lat": puntos["lat"], "lon": puntos["lon"], "color": puntos["estado"].map(lambda e: rgb(ESTADOS[e][0])),
+            "titulo": puntos["que_es"].str.slice(0, 90), "estado": puntos["estado"],
+            "costo": puntos["costo"].map(millones), "avance": puntos["avance"].map(lambda a: f"{a:.0f} % de avance")})
+        capa = pdk.Layer("ScatterplotLayer", data=datos_mapa, get_position=["lon", "lat"], get_fill_color="color",
+                         get_radius=3000, radius_min_pixels=4, radius_max_pixels=12, pickable=True,
+                         stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1)
+        st.pydeck_chart(pdk.Deck(layers=[capa], map_provider="carto", map_style="light",
+                                 initial_view_state=pdk.ViewState(latitude=-9.6, longitude=-75.0, zoom=4.2),
+                                 tooltip={"html": "<b>{titulo}</b><br/>{estado} · {costo} · {avance}"}), height=480)
+        # Leyenda: el color siempre va con el nombre del estado y su símbolo
+        st.markdown("".join(chip(e, int((puntos["estado"] == e).sum())) for e in ORDEN_ESTADOS if (puntos["estado"] == e).any()),
+                    unsafe_allow_html=True)
+    st.caption(f"{len(puntos):,} de {len(vista):,} proyectos de la lista tienen coordenadas. La ubicación la registra la entidad; "
+               "a veces es la de su oficina y no la de la obra.")
 
 # ============================================================
 # PASO 5.6: Cómo se calcula (transparencia) y fuente — definido arriba en pie_de_pagina()
