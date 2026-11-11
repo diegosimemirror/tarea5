@@ -2,6 +2,7 @@
 # PROCESO 3: Preparar la base de inversiones del gobierno nacional
 # Insumo:    data/crudo/DETALLE_INVERSIONES.csv, INVERSIONES_BRECHAS.csv y FORMATO_12B.csv
 # Resultado: data/procesado/gobierno_nacional.parquet (una fila por inversión, con su brecha y su último 12-B)
+#            data/procesado/brechas_gobierno_nacional.parquet (todas las brechas: una fila por inversión y brecha)
 #            Se conservan las columnas originales de los valores que se marcan como no válidos.
 # Uso:       uv run --with pandas --with pyarrow python scripts/03_preparar.py
 # ============================================================
@@ -46,10 +47,15 @@ print("    Identificadores repetidos que quedan:", gn["id"].duplicated().sum(), 
 # ============================================================
 numeros = {"MONTO_VIABLE": "viable", "COSTO_ACTUALIZADO": "costo", "CTRL_CONCURR": "ctrl", "DEVEN_ACUMUL_ANIO_ANT": "dev_hasta_2025",
            "DEV_ANIO_ACTUAL": "dev_2026", "PIM_ANIO_ACTUAL": "pim_2026", "SALDO_EJECUTAR": "saldo", "AVANCE_FISICO": "avance_fisico_original",
-           "NUM_HABITANTES_BENEF": "beneficiarios_original", "LATITUD": "lat_original", "LONGITUD": "lon_original"}
+           "NUM_HABITANTES_BENEF": "beneficiarios_original", "LATITUD": "lat_original", "LONGITUD": "lon_original",
+           # Para los indicadores de cartera (Proceso 7): expediente técnico, laudos, cartas fianza, certificado 2026 y
+           # montos de la programación multianual (PMI_ANIO_1 a 4: los años siguientes, según el nombre de la columna)
+           "MONTO_ET_F8": "monto_et", "MONTO_LAUDO": "laudo", "MONTO_FIANZA": "fianza", "CERTIF_ANIO_ACTUAL": "certificado_2026",
+           "PMI_ANIO_1": "pmi_1", "PMI_ANIO_2": "pmi_2", "PMI_ANIO_3": "pmi_3", "PMI_ANIO_4": "pmi_4"}
 for col, nuevo in numeros.items():
     gn[nuevo] = pd.to_numeric(gn[col], errors="coerce")
-for col, nuevo in {"FECHA_VIABILIDAD": "fecha_viable", "FEC_INI_EJECUCION": "inicio", "FEC_FIN_EJECUCION": "fin"}.items():
+for col, nuevo in {"FECHA_VIABILIDAD": "fecha_viable", "FEC_INI_EJECUCION": "inicio", "FEC_FIN_EJECUCION": "fin",
+                   "FEC_INI_EJEC_FISICA": "inicio_fisico", "FEC_FIN_EJEC_FISICA": "fin_fisico"}.items():
     gn[nuevo] = pd.to_datetime(gn[col], errors="coerce")
 gn["dev_acumulado"] = gn["dev_hasta_2025"].fillna(0) + gn["dev_2026"].fillna(0)
 
@@ -92,13 +98,32 @@ for c in ["brecha", "brecha_servicio", "brecha_unidad"]:
 gn = gn.merge(primera, on="CODIGO_UNICO", how="left")
 print("3.6 Con brecha:", int(gn["brecha"].notna().sum()), "de", len(gn))
 
+# PASO 3.6b: Guardar TODAS las brechas (no solo la primera), una fila por inversión y brecha, para el Proceso 7
+#   Antes: 505 452 filas de todo el país | Después: solo las del gobierno nacional, con nombres claros
+todas = pd.DataFrame({"cui": brechas["CODIGO_UNICO"], "servicio": texto(brechas["DES_SERVICIO"]),
+                      "indicador": texto(brechas["DES_BRECHA"]), "unidad_medida": texto(brechas["DES_UM"]),
+                      "espacio": texto(brechas["ESPACIO_GEOGRAFICO"]), "anio": brechas["ANIO"],
+                      "aporte": pd.to_numeric(brechas["CONTRIBUCION"], errors="coerce")})
+todas.to_parquet(PROCESADO / "brechas_gobierno_nacional.parquet", index=False)
+print("3.6b Todas las brechas:", todas.shape, "| inversiones:", todas["cui"].nunique())
+
 # ============================================================
 # PASO 3.7: Unir el último seguimiento (formato 12-B nacional)
 #   Los textos vienen con la fecha al inicio: "[21/01/2026] En proceso de liquidación" -> se separa la fecha
 # ============================================================
+# Programación mensual del año (para el Proceso 7). Significado deducido del nombre, porque el diccionario del MEF da error 404:
+#   MONTO_PROGRAMADO_m: lo que se programó gastar en el mes m | MONTO_ACTUALIZADO_m: la programación ya ajustada
+#   DEV_ENE_AÑO_VIG...: lo que se gastó (devengó) cada mes. Se suman de enero a octubre (los meses cerrados al 08/11/2026).
+MESES_CERRADOS = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SET", "OCT"]
+cols_mes = ([f"MONTO_PROGRAMADO_{i}" for i in range(1, 11)] + [f"MONTO_ACTUALIZADO_{i}" for i in range(1, 11)]
+            + [f"DEV_{m}_AÑO_VIG" for m in MESES_CERRADOS])
 cols12 = ["CODIGO_UNICO", "FECHA_ULT_ACT_F12B", "ULT_ESTADO_SITUACIONAL", "ULT_PROBLEMA", "ACC_PROBLEMA"]
-f12b = pd.read_csv(CRUDO / "FORMATO_12B.csv", dtype=str, encoding="utf-8-sig", keep_default_na=False, usecols=cols12)
+f12b = pd.read_csv(CRUDO / "FORMATO_12B.csv", dtype=str, encoding="utf-8-sig", keep_default_na=False, usecols=cols12 + cols_mes)
 f12b = f12b[f12b["CODIGO_UNICO"].isin(gn["CODIGO_UNICO"])]
+# sum(axis=1): suma los 10 meses de cada fila. Antes: 10 columnas por concepto | Después: 1 total de enero a octubre
+mensual = {nombre: f12b[[c for c in cols_mes if c.startswith(prefijo)]].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=1)
+           for nombre, prefijo in [("programado_ene_oct", "MONTO_PROGRAMADO_"), ("reprogramado_ene_oct", "MONTO_ACTUALIZADO_"),
+                                   ("devengado_ene_oct", "DEV_")]}
 # Nombres de personas en los textos (p. ej., "Ing. Juan Pérez"): se reemplazan por "[nombre omitido]" en la copia para mostrar.
 # La regla es prudente: puede ocultar alguna palabra de más, pero no deja nombres a la vista.
 PERSONA = (r"\b(Ing|ING|Sr|SR|Sra|SRA|Srta|Lic|LIC|Arq|ARQ|Dr|DR|Dra|DRA|Econ|ECON|Abog|ABOG|CPC|Mg|MG)\.\s*"
@@ -118,7 +143,7 @@ f12b = pd.DataFrame({"CODIGO_UNICO": f12b["CODIGO_UNICO"],
                      "fecha_12b": pd.to_datetime(f12b["FECHA_ULT_ACT_F12B"], errors="coerce"),
                      "situacion_12b": sin_fecha(f12b["ULT_ESTADO_SITUACIONAL"]),
                      "problema_12b": sin_fecha(f12b["ULT_PROBLEMA"]),
-                     "acciones_12b": sin_fecha(f12b["ACC_PROBLEMA"])})
+                     "acciones_12b": sin_fecha(f12b["ACC_PROBLEMA"]), **mensual})
 gn = gn.merge(f12b, on="CODIGO_UNICO", how="left")
 print("3.7 Con último 12-B:", int(gn["fecha_12b"].notna().sum()), "de", len(gn))
 
@@ -136,6 +161,9 @@ salida = gn.rename(columns=columnas)[list(columnas.values()) + [
     "viable", "costo", "ctrl", "dev_hasta_2025", "dev_2026", "dev_acumulado", "pim_2026", "saldo",
     "avance_fisico", "avance_fisico_original", "beneficiarios", "beneficiarios_original", "lat", "lon",
     "fecha_viable", "inicio", "fin", "brecha", "brecha_servicio", "brecha_unidad", "brecha_aporte", "n_brechas",
-    "fecha_12b", "situacion_12b", "problema_12b", "acciones_12b"]]
+    "fecha_12b", "situacion_12b", "problema_12b", "acciones_12b",
+    # columnas para los indicadores de cartera (Proceso 7)
+    "monto_et", "laudo", "fianza", "certificado_2026", "pmi_1", "pmi_2", "pmi_3", "pmi_4", "inicio_fisico", "fin_fisico",
+    "programado_ene_oct", "reprogramado_ene_oct", "devengado_ene_oct"]]
 salida.to_parquet(PROCESADO / "gobierno_nacional.parquet", index=False)
 print("3.8 Guardado:", salida.shape, "->", PROCESADO / "gobierno_nacional.parquet")
