@@ -14,12 +14,19 @@ app.run()
 cifras = lambda: sum(m.value.count('class="cifra"') for m in app.markdown)   # tarjetas de indicadores de cartera
 print("1. Carga inicial — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric], "| indicadores:", cifras())
 
-# Hacer clic en el primer botón "Ver ficha" y comprobar que no hay errores ni preguntas faltantes
-botones = [b for b in app.button if b.label == "Ver ficha"]
-print("2. Tarjetas con botón 'Ver ficha':", len(botones))
-botones[0].click().run()
+# La lista de proyectos (la última tabla de la página) y el selector "Ordenar por" (selector [4])
+lista = lambda: app.dataframe[-1].value
+print("2. Lista de proyectos — filas:", len(lista()), "| columnas:", list(lista().columns))
+app.selectbox[4].select("Costo: de mayor a menor").run()
+costos = lista()["Costo (S/)"]
+print("   Ordenada de mayor a menor costo:", bool(costos.is_monotonic_decreasing), "| primera fila:", lista().iloc[0]["Proyecto"][:60])
+
+# Abrir una ficha con el enlace directo (?ficha=CUI) y comprobar que no hay errores ni preguntas faltantes
+app.query_params["ficha"] = "2613205"
+app.run()
 preguntas = [p for p in ["¿Tiene financiamiento?", "¿Qué problemas reporta?", "¿Cuánto avanzó y cuánto gastó?"] if any(p in m.value for m in app.markdown)]
-print("3. Después de abrir la ficha — errores:", len(app.exception), "| preguntas nuevas presentes:", preguntas)
+print("3. Ficha por enlace (2613205) — errores:", len(app.exception), "| preguntas nuevas presentes:", preguntas)
+del app.query_params["ficha"]
 
 # Cambiar de ministerio (Transportes) y volver a revisar
 app.selectbox[0].select("TRANSPORTES Y COMUNICACIONES").run()

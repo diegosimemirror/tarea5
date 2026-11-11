@@ -49,7 +49,8 @@ def cargar():
     #   Antes: 1 fila por proyecto con las cinco preguntas | Después: la misma fila, con 8 columnas más
     frases = pd.read_parquet(PROCESADO / "indicadores_proyecto.parquet")[
         ["id", "brechas_lista", "frase_brecha", "frase_costo", "frase_dinero", "frase_problemas", "frase_programacion",
-         "clase_problema", "temas", "pct_gastado_vida", "pct_gastado_2026", "frase_indice", "frase_alerta", "alerta_gasto_avance"]]
+         "clase_problema", "temas", "pct_gastado_vida", "pct_gastado_2026", "frase_indice", "frase_alerta", "alerta_gasto_avance",
+         "meses_atraso"]]
     return tabla.merge(frases, on="id", how="left")
 
 @st.cache_data
@@ -386,27 +387,36 @@ tablero(sector, cartera)
 
 # ============================================================
 # PASO 5.4: NIVEL 3 — Unidad ejecutora: elegir una unidad (o todas) y un estado (o todos); ver cuántos proyectos son y cuánto
-#           cuestan; buscar y filtrar; y mostrar los proyectos como tarjetas (el nivel 4 es la ficha de cada uno)
+#           cuestan; buscar, filtrar y ordenar; y mostrar los proyectos en una lista (el nivel 4 es la ficha de cada uno)
 # ============================================================
 st.subheader("Unidades ejecutoras y sus proyectos")
 unidades = cartera.groupby("unidad").size().sort_values(ascending=False)
-f1, f2, f3, f4 = st.columns([2.2, 1.6, 0.9, 1.2])
+f1, f2, f3, f4 = st.columns([2, 1.5, 0.8, 1.6])
 lista_unidades = ["Todas las unidades"] + list(unidades.index)
 unidad = f1.selectbox("Unidad ejecutora", lista_unidades,
                       format_func=lambda u: u if u == "Todas las unidades" else f"{u.title()} — {unidades[u]:,}")
 vista = cartera if unidad == "Todas las unidades" else cartera[cartera["unidad"] == unidad]
 vista = elegir_estado(f2, vista, "estado_unidad")
-b1, b2 = st.columns([1, 2])
+# Órdenes posibles de la lista: (columnas, ¿de menor a mayor?) para sort_values()
+ORDENES = {"Estado: primero los que requieren atención": (["_orden", "costo"], [True, False]),
+           "Costo: de mayor a menor": (["costo"], [False]), "Costo: de menor a mayor": (["costo"], [True]),
+           "Avance: de menor a mayor": (["avance"], [True]), "Avance: de mayor a menor": (["avance"], [False]),
+           "Atraso: de mayor a menor": (["meses_atraso"], [False]), "Nombre: de la A a la Z": (["que_es"], [True])}
+b1, b2, b3 = st.columns([1, 1.2, 1.8])
 busqueda = b1.text_input("Buscar", placeholder="Nombre, lugar o CUI")
-b2.write("")
-solo_alerta = b2.toggle("Solo los que gastaron 30 puntos o más por encima de lo que declaran haber avanzado")
+orden = b2.selectbox("Ordenar por", list(ORDENES))
+b3.write("")
+solo_alerta = b3.toggle("Solo los que gastaron 30 puntos o más por encima de lo que declaran haber avanzado")
 if solo_alerta:
     vista = vista[vista["alerta_gasto_avance"].fillna(False).astype(bool)]
 if busqueda:
     q = busqueda.strip().lower()
     vista = vista[vista["que_es"].str.lower().str.contains(q, regex=False) | vista["lugar"].str.lower().str.contains(q, regex=False)
                   | vista["id"].str.contains(q, regex=False)]
-vista = vista.assign(_orden=vista["estado"].map(lambda e: ESTADOS[e][2])).sort_values(["_orden", "costo"], ascending=[True, False])
+# sort_values(): reordena las filas según el orden elegido; los que no tienen dato (p. ej., sin atraso) van al final
+columnas_orden, ascendente = ORDENES[orden]
+vista = (vista.assign(_orden=vista["estado"].map(lambda e: ESTADOS[e][2]))
+         .sort_values(columnas_orden, ascending=ascendente, na_position="last"))
 # Las cifras del nivel 3 van junto a los selectores, ya con todos los filtros aplicados
 f3.metric("Proyectos", f"{len(vista):,}")
 f4.metric("Cuestan en total", millones(vista["costo"].sum()))
@@ -490,23 +500,55 @@ def ficha(fila):
                 if fila[col]:
                     st.markdown(f"*{etq}:* {fila[col][:600]}")
 
+# ============================================================
+# PASO 5.4b: La lista de proyectos (una fila por proyecto). Al hacer clic en una fila se abre su ficha (nivel 4).
+#   Antes: tarjetas de 3 en 3, 24 a la vez | Después: una tabla con todos, que se puede ordenar con el selector
+#   o haciendo clic en el nombre de cada columna
+# ============================================================
+# Las cifras van junto al nombre, para que se vean sin desplazarse; el lugar y la unidad, al final
+tabla = pd.DataFrame({
+    "Estado": vista["estado"].map(lambda e: f"{ESTADOS[e][1]} {e}"),     # el símbolo acompaña al nombre del estado
+    "Proyecto": vista["que_es"],
+    "Costo (S/)": vista["costo"].round(0),
+    "Avance": vista["avance"].clip(0, 100).round(0),
+    "Atraso (meses)": vista["meses_atraso"].fillna(0).astype(int),   # 0 si no está atrasado (la tabla mostraría "None")
+    "Lugar": vista["lugar"],
+})
+if unidad == "Todas las unidades":
+    tabla["Unidad ejecutora"] = vista["unidad"].str.title()
+# La clave cambia con los filtros: así, al filtrar u ordenar, la lista empieza sin ninguna fila marcada
+clave_lista = "lista_" + str(abs(hash((sector, unidad, len(vista), orden, busqueda, solo_alerta, tuple(vista["id"].head(3))))))
+seleccion = st.dataframe(
+    tabla, hide_index=True, width="stretch", height=min(38 + 35 * len(tabla), 460),
+    on_select="rerun", selection_mode="single-row", key=clave_lista,
+    column_config={
+        "Proyecto": st.column_config.TextColumn("Proyecto", width="large"),
+        "Costo (S/)": st.column_config.NumberColumn("Costo (S/)", format="localized"),
+        "Avance": st.column_config.ProgressColumn("Avance", min_value=0, max_value=100, format="%.0f%%"),
+        "Atraso (meses)": st.column_config.NumberColumn("Atraso (meses)", format="%d"),
+    })
 st.caption(plural(len(vista), "proyecto") + ("" if unidad == "Todas las unidades" else f" de {unidad.title()}")
-           + ". Abre la ficha de cualquiera para ver sus preguntas.")
-if "mostrar" not in st.session_state:
-    st.session_state.mostrar = 24
-columnas = st.columns(3)
-for i, (_, fila) in enumerate(vista.head(st.session_state.mostrar).iterrows()):
-    with columnas[i % 3].container(border=True):
-        st.markdown(chip(fila["estado"]), unsafe_allow_html=True)
-        titulo = fila["que_es"] if len(fila["que_es"]) <= 110 else fila["que_es"][:107].rsplit(" ", 1)[0] + "…"
-        st.markdown(f"**{titulo}**")
-        st.caption(f'{fila["lugar"]} · {millones(fila["costo"])} · {fila["avance"]:.0f} % de avance')
-        if st.button("Ver ficha", key=f"ver-{fila['id']}"):
-            ficha(fila)
-if len(vista) > st.session_state.mostrar:
-    if st.button(f"Mostrar más ({len(vista) - st.session_state.mostrar:,} restantes)"):
-        st.session_state.mostrar += 24
-        st.rerun()
+           + ". Haz clic en una fila para abrir la ficha del proyecto.")
+
+# Abrir la ficha de la fila marcada (solo cuando cambia la fila, para no reabrirla en cada clic de la página)
+filas = seleccion.selection.rows
+abierta = False                      # solo se puede abrir una ficha (ventana) a la vez
+if filas:
+    fila = vista.iloc[filas[0]]
+    if st.session_state.get("ficha_abierta") != fila["id"]:
+        st.session_state["ficha_abierta"] = fila["id"]
+        ficha(fila)
+        abierta = True
+else:
+    st.session_state["ficha_abierta"] = None
+
+# Enlace directo a una ficha: http://localhost:8501/?ficha=CUI (sirve para compartir un proyecto y para la prueba automática)
+pedido = st.query_params.get("ficha")
+if pedido and not abierta and st.session_state.get("ficha_enlace") != pedido:
+    encontrados = inversiones[inversiones["id"] == pedido]
+    if len(encontrados):
+        st.session_state["ficha_enlace"] = pedido
+        ficha(encontrados.iloc[0])
 
 # ============================================================
 # PASO 5.6: Cómo se calcula (transparencia) y fuente — definido arriba en pie_de_pagina()
