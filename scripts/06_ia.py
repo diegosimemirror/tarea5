@@ -34,7 +34,7 @@ POR_PEDIDO = 20          # proyectos por pedido: menos pedidos, para no agotar e
 INSTRUCCIONES = (
     "Eres un editor que convierte descripciones técnicas de proyectos de inversión pública del Perú en títulos claros "
     "para personas que no trabajan en inversión pública. Para cada proyecto recibes su id, su nombre oficial y su "
-    "descripción técnica. Escribe UN título de una sola línea, de máximo 22 palabras, con esta estructura: "
+    "descripción técnica. Escribe UN título de una sola línea, breve (máximo 18 palabras), con esta estructura: "
     "QUÉ HACE + 'para' + PARA QUÉ. "
     "QUÉ HACE: las acciones concretas que detalla la descripción (qué se construye, equipa, instala o implementa, con sus "
     "cantidades si las hay: cuántos locales, aulas, ventanillas, kilómetros, equipos) y dónde, empezando con un verbo en "
@@ -85,9 +85,18 @@ def valido(titulo, fuente):
     """Control automático: el título no está vacío, es corto y todas sus cifras están en el texto del MEF."""
     return bool(titulo) and len(titulo) <= 220 and cifras(titulo) <= cifras(fuente)
 
-def llamar(url, clave, modelo, contenido):
+LARGO_MAXIMO = 150      # caracteres: si un título pasa de esto, se pide a la IA que lo sintetice
+
+SINTESIS = (
+    "Sintetiza cada título a máximo 16 palabras y 140 caracteres, conservando la estructura QUÉ HACE + 'para' + PARA QUÉ. "
+    "Agrupa acciones (por ejemplo, 'construye y equipa'), deja solo las 2 o 3 acciones principales y el lugar principal, "
+    "y acorta la finalidad. Puedes quitar cifras, pero nunca agregues cifras ni datos nuevos. "
+    'Responde solo con JSON: {"titulos": [{"id": "...", "titulo": "..."}]}, con un elemento por título recibido.'
+)
+
+def llamar(url, clave, modelo, contenido, instrucciones=INSTRUCCIONES):
     cuerpo = json.dumps({"model": modelo, "temperature": 0.2, "response_format": {"type": "json_object"},
-                         "messages": [{"role": "system", "content": INSTRUCCIONES}, {"role": "user", "content": contenido}]}).encode()
+                         "messages": [{"role": "system", "content": instrucciones}, {"role": "user", "content": contenido}]}).encode()
     pedido = urllib.request.Request(url, data=cuerpo, headers={"Authorization": f"Bearer {clave}", "Content-Type": "application/json"})
     # Reintentos: si el servicio está saturado (error 500 o 503), espera y vuelve a intentar hasta 3 veces
     for intento in range(4):
@@ -149,6 +158,20 @@ def main():
             continue
         tokens_in += uso.get("prompt_tokens", 0)
         tokens_out += uso.get("completion_tokens", 0)
+        # Segundo paso: los títulos muy largos se mandan a sintetizar. Antes: 180 caracteres | Después: unos 140
+        largos = {i: t for i, t in titulos.items() if len(t) > LARGO_MAXIMO}
+        if largos:
+            try:
+                cortos, uso2 = llamar(PROVEEDORES[clave_env], os.environ[clave_env], modelo,
+                                      json.dumps([{"id": i, "titulo": t} for i, t in largos.items()], ensure_ascii=False), SINTESIS)
+                tokens_in += uso2.get("prompt_tokens", 0)
+                tokens_out += uso2.get("completion_tokens", 0)
+                for i, t in cortos.items():
+                    if i in largos and t and len(t) < len(largos[i]):
+                        titulos[i] = t
+                print(f"    sintetizados: {sum(1 for i in largos if len(titulos[i]) < len(largos[i]))} de {len(largos)} títulos largos")
+            except Exception as e:                              # si falla la síntesis, quedan los títulos originales
+                print(f"    no se pudo sintetizar ({type(e).__name__}); quedan los títulos originales")
         for _, f in grupo.iterrows():
             t = titulos.get(str(f["id"]), "")
             if valido(t, f"{f['alternativa']} {f['nombre']}"):
@@ -157,7 +180,9 @@ def main():
                 rechazados += 1
                 sobran = cifras(t) - cifras(f"{f['alternativa']} {f['nombre']}")
                 print(f"    descartado {f['id']}: «{t}»" + (f" (cifras que no están en el MEF: {', '.join(sorted(sobran))})" if sobran else ""))
-        print(f"  {inicio + len(grupo):,} de {len(pendientes):,} enviados")
+        print(f"  {inicio + len(grupo):,} de {len(pendientes):,} enviados", flush=True)
+        if (inicio // POR_PEDIDO) % 10 == 9:          # cada 10 pedidos se guarda lo avanzado, por si algo se interrumpe
+            pd.concat([previas, pd.DataFrame(nuevas)], ignore_index=True).drop_duplicates("id", keep="last").to_parquet(SALIDA, index=False)
         time.sleep(2)
 
     todas = pd.concat([previas, pd.DataFrame(nuevas)], ignore_index=True).drop_duplicates("id", keep="last")
