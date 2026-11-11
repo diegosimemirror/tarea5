@@ -34,19 +34,25 @@ POR_PEDIDO = 20          # proyectos por pedido: menos pedidos, para no agotar e
 INSTRUCCIONES = (
     "Eres un editor que convierte descripciones técnicas de proyectos de inversión pública del Perú en títulos claros "
     "para personas que no trabajan en inversión pública. Para cada proyecto recibes su id, su nombre oficial y su "
-    "descripción técnica. Escribe UN título de una sola línea, de máximo 15 palabras, que diga qué hace el proyecto y, "
-    "si la descripción lo dice, cuánto (cantidades) y dónde (lugares). Empieza con un verbo en presente: Construye, "
-    "Mejora, Amplía, Equipa, Instala, Abre, Renueva, Repone, Adquiere. "
-    "El título debe combinar dos cosas: (1) las ACCIONES CONCRETAS que detalla la descripción (qué se construye, equipa, "
-    "instala o implementa, con sus cantidades si las hay: cuántos locales, aulas, ventanillas, kilómetros, equipos) y "
-    "(2) el servicio o la instalación en palabras comunes (centro infantil, posta de salud, hospital, colegio, sistema de "
-    "agua potable, carretera, oficinas de atención). No repitas ni parafrasees el nombre oficial: di lo que la "
-    "descripción detalla. Escribe las siglas con su significado (CIAI = centro infantil; EESS = establecimiento de salud; "
-    "IE = colegio). Ejemplos inventados: descripción 'Construcción de 12 aulas, 1 laboratorio y servicios higiénicos; "
-    "adquisición de mobiliario' con nombre 'Mejoramiento del servicio educativo de la IE 123 de Ayaviri' -> 'Construye "
-    "12 aulas y un laboratorio y equipa el colegio 123 de Ayaviri'; descripción 'Implementación de 5 módulos de atención "
-    "y equipamiento informático en las sedes de Puno y Juliaca' -> 'Implementa 5 módulos de atención y equipa con "
-    "computadoras las sedes de Puno y Juliaca'. "
+    "descripción técnica. Escribe UN título de una sola línea, de máximo 22 palabras, con esta estructura: "
+    "QUÉ HACE + 'para' + PARA QUÉ. "
+    "QUÉ HACE: las acciones concretas que detalla la descripción (qué se construye, equipa, instala o implementa, con sus "
+    "cantidades si las hay: cuántos locales, aulas, ventanillas, kilómetros, equipos) y dónde, empezando con un verbo en "
+    "presente, nunca en pasado (Construye, Amplía, Equipa, Instala, Implementa, Renueva, Repone, Adquiere, Financia). "
+    "PARA QUÉ: el beneficio para la gente, en palabras simples, tomado del nombre oficial y de la brecha que busca cerrar "
+    "(por ejemplo, 'para mejorar su servicio de cuidado diurno', 'para mejorar el acceso al registro civil y la "
+    "identificación', 'para dar agua potable a la comunidad', 'para acercar los servicios del Estado a la población "
+    "rural'). El PARA QUÉ nunca repite la acción ('construye un Tambo para crear el Tambo' está mal). "
+    "Nombra el servicio o la instalación en palabras comunes (centro infantil, posta de salud, hospital, colegio, sistema "
+    "de agua potable, carretera, oficinas de atención) y escribe las siglas con su significado (CIAI = centro infantil; "
+    "EESS = establecimiento de salud; IE = colegio; MIDIS = Ministerio de Desarrollo e Inclusión Social, o déjalo como "
+    "MIDIS si es muy largo). "
+    "Ejemplos inventados: descripción 'Construcción de 12 aulas, 1 laboratorio y servicios higiénicos; adquisición de "
+    "mobiliario' con nombre 'Mejoramiento del servicio educativo de la IE 123 de Ayaviri' -> 'Construye 12 aulas y un "
+    "laboratorio y equipa el colegio 123 de Ayaviri para mejorar su servicio educativo'; descripción 'Implementación de "
+    "5 módulos de atención y equipamiento informático en las sedes de Puno y Juliaca' con nombre 'Mejoramiento de los "
+    "servicios de atención al ciudadano' -> 'Implementa 5 módulos de atención y equipa con computadoras las sedes de Puno "
+    "y Juliaca para mejorar la atención al público'. "
     "Reglas: usa SOLO la información dada; no inventes cifras, lugares ni beneficiarios; copia las cifras tal como "
     "aparecen, sin sumarlas; no uses términos técnicos (PIP, IOARR, UEI, expediente, componente). Si la descripción no "
     "permite saber qué hace el proyecto, devuelve el título vacío. "
@@ -64,8 +70,10 @@ def leer_env():
                     os.environ.setdefault(clave.strip(), valor.strip())
 
 def paquete(filas):
-    """Arma el pedido de un grupo de proyectos. Antes: filas de la tabla | Después: un texto JSON con id, nombre y descripción."""
-    return json.dumps([{"id": f["id"], "nombre_oficial": f["nombre"], "descripcion_tecnica": f["alternativa"][:1200]}
+    """Arma el pedido de un grupo de proyectos. Antes: filas de la tabla | Después: un texto JSON con id, nombre,
+    descripción y la brecha que busca cerrar (la brecha ayuda a decir PARA QUÉ sirve el proyecto)."""
+    return json.dumps([{"id": f["id"], "nombre_oficial": f["nombre"], "descripcion_tecnica": f["alternativa"][:1200],
+                        "brecha_que_busca_cerrar": f["brecha"].capitalize() if isinstance(f["brecha"], str) else ""}
                        for _, f in filas.iterrows()], ensure_ascii=False)
 
 def cifras(texto):
@@ -75,14 +83,23 @@ def cifras(texto):
 
 def valido(titulo, fuente):
     """Control automático: el título no está vacío, es corto y todas sus cifras están en el texto del MEF."""
-    return bool(titulo) and len(titulo) <= 130 and cifras(titulo) <= cifras(fuente)
+    return bool(titulo) and len(titulo) <= 220 and cifras(titulo) <= cifras(fuente)
 
 def llamar(url, clave, modelo, contenido):
     cuerpo = json.dumps({"model": modelo, "temperature": 0.2, "response_format": {"type": "json_object"},
                          "messages": [{"role": "system", "content": INSTRUCCIONES}, {"role": "user", "content": contenido}]}).encode()
     pedido = urllib.request.Request(url, data=cuerpo, headers={"Authorization": f"Bearer {clave}", "Content-Type": "application/json"})
-    with urllib.request.urlopen(pedido, timeout=120) as r:
-        respuesta = json.loads(r.read().decode())
+    # Reintentos: si el servicio está saturado (error 500 o 503), espera y vuelve a intentar hasta 3 veces
+    for intento in range(4):
+        try:
+            with urllib.request.urlopen(pedido, timeout=120) as r:
+                respuesta = json.loads(r.read().decode())
+            break
+        except urllib.error.HTTPError as e:
+            if e.code in (500, 503) and intento < 3:
+                time.sleep(15 * (intento + 1))
+                continue
+            raise
     datos = json.loads(respuesta["choices"][0]["message"]["content"])   # salida estructurada: si no es JSON, falla aquí
     return {str(x.get("id")): str(x.get("titulo", "")).strip() for x in datos.get("titulos", [])}, respuesta.get("usage", {})
 
