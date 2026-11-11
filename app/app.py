@@ -221,47 +221,48 @@ def tablero(clave, cartera):
     Insumo: la fila de indicadores_cartera del ministerio elegido (o de la cartera completa) | Resultado: tarjetas y detalles."""
     r = indicadores.loc[clave]
     st.subheader("¿Cómo está la cartera?")
-    fila1, fila2 = st.columns(4), st.columns(3)
+    # Seis tarjetas en dos filas de tres (las brechas van solo en su desplegable, "Ver todas las brechas que abordan")
+    fila1, fila2 = st.columns(3), st.columns(3)
 
-    # P1: brechas. Las de esta cartera: cuántos proyectos apuntan a cada una y cuánto aportan (en la unidad de cada brecha)
+    # P1: brechas de esta cartera, para el desplegable: cuántos proyectos apuntan a cada una, cuánto cuestan esos proyectos
+    #   y cuánto aportan (en la unidad de cada brecha).
     #   Antes: una fila por proyecto y brecha | Después: una fila por brecha, de la que tiene más proyectos a la que tiene menos
     b = brechas_todas[brechas_todas["cui"].isin(cartera["cui"])]
-    por_brecha = (b.groupby("indicador").agg(proyectos=("cui", "nunique")).sort_values("proyectos", ascending=False))
-    corto = lambda t: t if len(t) <= 60 else t[:57].rsplit(" ", 1)[0] + "…"
-    tarjeta(fila1[0], "¿A qué brechas apuntan?", n_(len(por_brecha)), "brechas de servicio distintas",
-            [(n_(k), corto(t)) for t, k in por_brecha["proyectos"].head(2).items()]
-            + [(porc(r["pct_con_brecha"]), "de los proyectos con brecha registrada")])
+    costos = cartera.drop_duplicates("cui").set_index("cui")["costo"]
+    por_brecha = (b.drop_duplicates(["indicador", "cui"]).assign(costo=lambda d: d["cui"].map(costos))
+                  .groupby("indicador").agg(proyectos=("cui", "nunique"), costo=("costo", "sum"))
+                  .sort_values("proyectos", ascending=False))
 
     # P2: presupuesto 2026 que falta gastar
     if r["pim_2026"] > 0:
-        tarjeta(fila1[1], "¿Cuánto falta gastar este año?", porc(r["pct_pendiente_2026"]), "del presupuesto 2026 sin gastar",
+        tarjeta(fila1[0], "¿Cuánto falta gastar este año?", porc(r["pct_pendiente_2026"]), "del presupuesto 2026 sin gastar",
                 [(millones(r["pendiente_2026"]), f"de {millones(r['pim_2026'])}"),
                  (n_(DIAS_AL_CIERRE), "días para cerrar el año"),
                  (n_(r["n_mas_mitad_pendiente"]), "con más de la mitad sin gastar")])
     else:
-        tarjeta(fila1[1], "¿Cuánto falta gastar este año?", "—", "sin presupuesto 2026 en estos datos")
+        tarjeta(fila1[0], "¿Cuánto falta gastar este año?", "—", "sin presupuesto 2026 en estos datos")
 
     # P3: cambio de costo desde la aprobación
     p = r["pct_desv_total"]
     if pd.notna(p):
-        tarjeta(fila1[2], "¿Cuánto cambiaron los costos?", f"{'+' if p >= 0 else '−'}{abs(100 * p):.0f} %", "desde que se aprobaron",
+        tarjeta(fila1[1], "¿Cuánto cambiaron los costos?", f"{'+' if p >= 0 else '−'}{abs(100 * p):.0f} %", "desde que se aprobaron",
                 [(millones(abs(r["desv_total"])), "más" if p >= 0 else "menos"),
                  (n_(r["n_subio_mas_20"]), "con alza de más de 20 %"),
                  (n_(r["n_mas_que_duplico"]), "con costo duplicado o más")])
     else:
-        tarjeta(fila1[2], "¿Cuánto cambiaron los costos?", "—", "sin montos para comparar")
+        tarjeta(fila1[1], "¿Cuánto cambiaron los costos?", "—", "sin montos para comparar")
 
     # Avance frente a gasto (aproximación al valor ganado): solo proyectos con avance declarado en 2026
     #   Cifra principal: cuánto avance declaran por cada sol gastado. S/ 1 = avanzan al mismo ritmo que gastan;
     #   menos de S/ 1 = gastan más rápido de lo que avanzan
     if r["n_comparables_avance"] > 0:
         indice = f"{r['indice_avance_gasto']:.2f}".replace(".", ",")
-        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", f"S/ {indice}",
+        tarjeta(fila1[2], "¿Avanzan al ritmo de lo que gastan?", f"S/ {indice}",
                 "de avance declarado por cada sol gastado (S/ 1 = al mismo ritmo)",
                 [(n_(r["n_comparables_avance"]), "con avance declarado en 2026 (base del cálculo)"),
                  (n_(r["n_alerta_gasto_avance"]), "con gasto 30 puntos o más por encima de su avance")])
     else:
-        tarjeta(fila1[3], "¿Avanzan al ritmo de lo que gastan?", "—", "ningún proyecto declaró su avance en 2026")
+        tarjeta(fila1[2], "¿Avanzan al ritmo de lo que gastan?", "—", "ningún proyecto declaró su avance en 2026")
 
     # P4: problemas del último reporte de seguimiento (los 3 temas más comunes, con nombre corto)
     con_problemas = cartera[cartera["clase_problema"] == "Reporta problemas"]
@@ -312,10 +313,17 @@ def tablero(clave, cartera):
             aporte["texto"] = aporte.apply(lambda f: f"{f['aporte']:,.0f} {f['unidad_medida']}", axis=1)
             aporte_txt = aporte.groupby("indicador")["texto"].agg("; ".join)
             tabla_brechas = pd.DataFrame({"Brecha": por_brecha.index, "Proyectos": por_brecha["proyectos"].to_numpy(),
+                                          # costo de los proyectos que apuntan a la brecha, en millones (número, para poder ordenar)
+                                          "Valorización (S/ millones)": (por_brecha["costo"] / 1e6).round(1).to_numpy(),
                                           "Aporte total registrado": [aporte_txt.get(t, "sin dato") for t in por_brecha.index]})
             st.dataframe(tabla_brechas, hide_index=True, width="stretch",
-                         column_config={"Brecha": st.column_config.TextColumn("Brecha", width="large")})
-            st.caption("Aporte: lo que las entidades registran que cada proyecto aportará para cerrar la brecha "
+                         column_config={"Brecha": st.column_config.TextColumn("Brecha", width="large"),
+                                        "Valorización (S/ millones)": st.column_config.NumberColumn(
+                                            "Valorización (S/ millones)", format="localized",
+                                            help="Costo actual de los proyectos que apuntan a esta brecha")})
+            st.caption("Valorización: costo actual de los proyectos que apuntan a cada brecha. Un proyecto con varias brechas "
+                       "suma su costo en cada una, así que la suma de la columna puede superar el costo de la cartera. "
+                       "Aporte: lo que las entidades registran que cada proyecto aportará para cerrar la brecha "
                        "(por ejemplo, personas atendidas o establecimientos mejorados), sumado entre proyectos. "
                        "Puede haber superposición entre proyectos de una misma zona, y algunas sumas no son creíbles por errores de registro "
                        "(por ejemplo, más establecimientos de salud de los que existen en el país): tómalas como referencia.")

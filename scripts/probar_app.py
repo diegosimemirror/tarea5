@@ -13,7 +13,7 @@ app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app" / "app.p
 app.run()
 cifras = lambda: sum(m.value.count('class="cifra"') for m in app.markdown)   # tarjetas de indicadores de cartera
 print("1. Carga inicial (debe ser la cartera completa) — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric],
-      "| indicadores:", cifras(), "| brechas en la tarjeta:", [m.value for m in app.markdown if "brechas de servicio distintas" in m.value][:1] != [])
+      "| indicadores:", cifras())
 
 # Pasar al MIDIS para revisar la lista de proyectos
 app.selectbox[0].select("DESARROLLO E INCLUSION SOCIAL").run()
@@ -56,9 +56,9 @@ print("5. Cartera completa — errores:", len(app.exception), "| métricas:", [m
 fallas = []
 for s in app.selectbox[0].options[1:]:
     app.selectbox[0].select(s).run()
-    if app.exception or cifras() != 7:
+    if app.exception or cifras() != 6:
         fallas.append(s)
-print("6. Los 33 ministerios o entidades — con error o sin sus 7 indicadores:", fallas or "ninguno")
+print("6. Los 33 ministerios o entidades — con error o sin sus 6 indicadores:", fallas or "ninguno")
 
 # Nivel 2 (ministerio): elegir el estado "Atrasado" en el MIDIS; las cifras deben ser solo las de los atrasados
 #   Selectores: [0] cartera, [1] estado del ministerio, [2] unidad ejecutora, [3] estado de la unidad
