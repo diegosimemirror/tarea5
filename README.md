@@ -62,20 +62,52 @@
 
 ## 7. Modelo de negocio
 
-**POR COMPLETAR**, con lo que salga de las conversaciones. Opciones para validar:
-- **Quién paga:** organismos cooperantes y consultoras que supervisan carteras; OPMI y alta dirección de entidades; medios y ONG de transparencia (versión ciudadana gratuita).
-- **Precio concreto:** por definir. Por ejemplo, una suscripción mensual por entidad seguida.
-- **Costo por usuario:**
-  - El servidor es gratuito (Streamlit Community Cloud) y los datos son públicos.
-  - La IA se paga una sola vez por cada actualización de los textos: tokens por proyecto × proyectos × precio del proveedor. Se calcula al elegir la API.
+### Quién usa y quién paga
+- **Usa:** la alta dirección de una entidad pública y sus asesores (ministros, viceministros, gobernadores, alcaldes). Necesitan ver su cartera sin ser especialistas en Invierte.pe.
+- **Paga:** la propia **entidad pública**. Contrata la oficina que hoy arma los reportes (planeamiento u OPMI).
+- **Evidencia:** en julio de 2023, la alta dirección de un ministerio no pudo mostrar su cartera en una reunión con la banca multilateral; hubo que armarla después ([nota 2](docs/research/02_conversacion.md)).
+- **Segundo grupo:** la banca multilateral, los cooperantes y las consultoras, que revisan carteras de varios sectores antes de financiar.
+- **Gratis:** la versión que ya funciona (gobierno nacional), para la ciudadanía, los periodistas y los estudiantes.
+
+### Precio
+**US$ 100 al mes por entidad** (≈ S/ 370), o **US$ 1 200 al año**, hasta 5 usuarios. Incluye:
+- su cartera con los indicadores y las fichas;
+- alertas por correo cuando un proyecto cambia de estado;
+- un reporte descargable para reuniones;
+- el **historial**: una copia diaria de los datos del MEF para medir el atraso frente a la fecha original, que el MEF no guarda.
+
+**Por qué ese precio:**
+- **Hoy la cartera la arma un especialista a mano.** Supuesto: gana S/ 7 000 al mes y dedica una semana al mes a armarla, unos S/ 1 750 mensuales. El precio es casi cinco veces menor.
+- **El monto anual es pequeño para una entidad.** Hay que verificar en la Ley 32069 el umbral para contrataciones menores.
+- **Supuestos por validar** en la conversación 3.
+
+**Mercado:** **2 020 entidades** tienen hoy inversiones activas: 184 del gobierno nacional, 30 regionales y 1 806 locales (MEF, 08/11/2026). Si todas pagaran, serían US$ 2,4 millones al año.
+
+### Costo por usuario (servidor y tokens)
+
+| Concepto | Hoy | Versión de pago |
+|---|---|---|
+| Servidor | US$ 0 (Streamlit Community Cloud) | ≈ US$ 25 al mes, compartido por todos los clientes |
+| Datos | US$ 0 (MEF, datos abiertos) | US$ 0 |
+| Tokens de IA | US$ 0 (los textos salen de reglas) | ≈ US$ 4 por actualizar los 12 731 proyectos nacionales; ≈ US$ 45 por los 150 641 de todo el país |
+
+- **Supuesto de tokens:** 1 000 de entrada y 250 de salida por proyecto, con un modelo pequeño a US$ 0,15 y US$ 0,60 por millón de tokens. El precio exacto se confirma al elegir el proveedor (sección 8).
+- **Con 20 entidades,** servidor más IA suman ≈ US$ 70 al mes: **≈ US$ 3,5 por entidad**, frente a un precio de US$ 100.
+- **La IA se paga por proyecto actualizado, no por usuario,** así que el costo por cliente baja con cada cliente nuevo.
+
+### Qué sigue
+1. Gobiernos regionales y locales (13 681 y 124 229 inversiones).
+2. Pasar de "problemas reportados" a "riesgos" con IA.
+3. Historial diario y alertas.
+4. Los primeros 3 clientes, entre las entidades donde el founder ha trabajado.
 
 ## 8. Herramientas del curso
 
-| Herramienta | Sesión | Dónde está |
-|---|---|---|
-| Datos e ingesta: APIs y datos abiertos | 03 | `scripts/01_descargar.py` |
-| Dashboards | 05 | `app/app.py` |
-| LLMs con salidas estructuradas | 08 | `scripts/06_ia.py` (listo; falta elegir proveedor y poner la clave) |
+| Herramienta | Sesión | Dónde está | Por qué esta |
+|---|---|---|---|
+| Scraping y APIs (datos abiertos) | 03 | `scripts/01_descargar.py` | Los datos de inversión pública ya existen y son públicos: el valor está en traerlos solos y al día, no en digitarlos. |
+| Dashboards | 05 | `app/app.py` | La usuaria es la alta dirección: necesita ver su cartera en una pantalla, en el navegador, sin instalar nada. |
+| LLMs con salidas estructuradas | 08 | `scripts/06_ia.py` (código listo, **todavía sin activar**: falta elegir proveedor y poner la clave) | Para redactar en simple los textos técnicos y clasificar los problemas, con salida en JSON para revisar cada campo. Mientras no esté activa, no se cuenta entre las dos herramientas del producto. |
 
 ## 9. Qué hizo el agente
 
