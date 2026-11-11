@@ -22,7 +22,7 @@
 
 ## 4. Solución e insight
 
-**Solución.** Eliges un ministerio y ves:
+**Solución.** Primero ves la **cartera completa**: cada ministerio o entidad con su número de proyectos y su costo. Luego eliges un ministerio y ves:
 1. El **árbol de su cartera**: el ministerio, sus unidades ejecutoras y sus proyectos.
 2. Cada proyecto respondido en **cinco preguntas**: ¿qué es?, ¿qué problema resuelve?, ¿cuánto cuesta y cuánto se ha gastado?, ¿cuándo termina? y ¿cómo va?
 3. El detalle técnico, a un clic, en el MEF.
