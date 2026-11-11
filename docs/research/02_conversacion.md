@@ -1,9 +1,9 @@
-# Conversación N.º 2 — La banca multilateral pide la cartera de proyectos del sector salud (2023)
+# Conversación N.º 2 — La banca multilateral pide la cartera de proyectos del sector salud (julio de 2023)
 
-> **Reconstruida de memoria el 10/11/2026.** La reunión ocurrió en 2023, antes de esta app: no se mostró ningún prototipo.
+> **Reconstruida de memoria el 10/11/2026.** La reunión ocurrió en julio de 2023, antes de esta app: no se mostró ningún prototipo.
 > No hay frases textuales; lo que sigue es un resumen del founder.
 
-- **Fecha:** 2023 (fecha exacta no registrada)
+- **Fecha:** julio de 2023
 - **Rol de las personas** (sin nombre): representantes de la banca multilateral y la alta dirección de un ministerio del sector salud
 - **Contexto:** la banca multilateral quería conocer las necesidades de financiamiento del sector, es decir, qué inversiones grandes
   podrían financiarse con préstamos.

@@ -1,9 +1,9 @@
-# Conversación N.º 1 — Seguimiento de obras emblemáticas del Bicentenario (2019)
+# Conversación N.º 1 — Seguimiento de obras emblemáticas del Bicentenario (noviembre–diciembre de 2019)
 
-> **Reconstruida de memoria el 10/11/2026.** La conversación ocurrió en 2019, antes de esta app: no se mostró ningún prototipo.
+> **Reconstruida de memoria el 10/11/2026.** Las conversaciones ocurrieron entre noviembre y diciembre de 2019, antes de esta app: no se mostró ningún prototipo.
 > No hay frases textuales; lo que sigue es un resumen del founder.
 
-- **Fecha:** 2019 (fecha exacta no registrada)
+- **Fecha:** noviembre y diciembre de 2019
 - **Rol de las personas** (sin nombre): asesores de la Oficina de Programación Multianual de Inversiones (OPMI) de un ministerio del sector salud
 - **Contexto:** el founder apoyaba el seguimiento del proyecto especial Bicentenario de la Independencia del Perú, que incluía
   obras emblemáticas de salud que debían terminar en fechas simbólicas.
