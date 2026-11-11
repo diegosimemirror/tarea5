@@ -79,5 +79,15 @@ enlace.run()
 print("9. Enlace directo ?ficha=2324655 — errores:", len(enlace.exception), "| cartera:", enlace.selectbox[0].value,
       "| ficha abierta:", any("¿Cuánto se ha ejecutado?" in m.value for m in enlace.markdown))
 
+# Búsqueda (conversación 3): sin tildes, palabra por palabra y con aviso cuando la obra no es del gobierno nacional
+busca = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app" / "app.py"), default_timeout=120)
+busca.run()
+busca.selectbox[0].select("SALUD").run()
+busca.text_input[0].input("bernales").run()
+print("10. Buscar 'bernales' en Salud — errores:", len(busca.exception), "| filas:", len(busca.dataframe[-1].value),
+      "| incluye el hospital:", busca.dataframe[-1].value["Proyecto"].str.contains("Demuele").any())
+busca.text_input[0].input("hospital de Chupaca").run()
+print("    Buscar 'hospital de Chupaca' — errores:", len(busca.exception), "| aviso:", [i.value[:60] for i in busca.info])
+
 for e in app.exception:
     print("ERROR:", e.value)

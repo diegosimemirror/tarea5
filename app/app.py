@@ -14,6 +14,7 @@
 from pathlib import Path
 import textwrap
 import html
+import unicodedata   # unicodedata: quitar las tildes, para que «Sanchez» encuentre «Sánchez» al buscar
 import pandas as pd
 import pydeck as pdk   # pydeck: mapas interactivos; viene instalado con Streamlit
 import streamlit as st
@@ -35,6 +36,10 @@ def marca_datos():
     (por ejemplo, al subir títulos nuevos a GitHub), la marca cambia y Streamlit vuelve a leer los datos.
     Antes: la caché guardaba los datos de la primera carga para siempre | Después: se renueva con cada cambio."""
     return tuple(round(p.stat().st_mtime) for p in sorted(PROCESADO.glob("*.parquet")))
+
+def sin_tildes(texto):
+    """Antes: 'Sánchez, Junín' | Después: 'sanchez, junin' (minúsculas y sin tildes), para comparar al buscar."""
+    return "".join(c for c in unicodedata.normalize("NFKD", str(texto).lower()) if not unicodedata.combining(c))
 
 @st.cache_data
 def cargar(marca):
@@ -61,6 +66,10 @@ def cargar(marca):
     #   Antes: proporciones (0.153) | Después: porcentajes (15.3); sin presupuesto 2026 queda vacío
     tabla["ejec_2026"] = 100 * tabla["pct_gastado_2026"]
     tabla["ejec_acum"] = 100 * tabla["pct_gastado_vida"]
+    # Texto de búsqueda: título, nombre oficial, lugar, unidad ejecutora y CUI, en minúsculas y sin tildes
+    #   Antes: la búsqueda solo leía el título y el lugar | Después: también el nombre oficial y la unidad ejecutora
+    tabla["_busqueda"] = (tabla["que_es"].fillna("") + " " + tabla["nombre"].fillna("") + " " + tabla["lugar"].fillna("")
+                          + " " + tabla["unidad"].fillna("") + " " + tabla["id"].astype(str)).map(sin_tildes)
     return tabla
 
 @st.cache_data
@@ -192,10 +201,13 @@ def pie_de_pagina():
             "**Indicadores de la cartera**\n"
             "- **Brechas:** el vínculo que la entidad registró entre el proyecto y una brecha de servicio.\n"
             "- **Falta gastar este año:** presupuesto 2026 menos lo ya gastado (devengado).\n"
-            "- **Cambio de costo:** costo actual frente al monto con que se aprobó el proyecto.\n"
+            "- **Cambio de costo:** costo actual frente al monto con que se aprobó el proyecto. «Más del doble» es un alza de más de 100 %.\n"
             "- **Problemas:** el último reporte de seguimiento (formato 12-B), clasificado por temas con palabras clave. "
-            "Son problemas que ya ocurren, no riesgos.\n"
-            "- **Financiamiento:** presupuesto 2026 o montos en la programación multianual (se toma su primer año como 2026).\n"
+            "Son problemas que ya ocurren, no riesgos. «Expediente técnico o estudios» reúne los reportes que los mencionan, "
+            "sin distinguir si el expediente está vencido, en elaboración o tiene deficiencias.\n"
+            "- **Financiamiento:** presupuesto 2026 o montos en la programación multianual (se toma su primer año como 2026). "
+            "«Programados para 2027 o después»: sin presupuesto ni programación para 2026, pero con montos programados "
+            "para 2027 en adelante.\n"
             "- **Ejecución:** lo devengado en 2026 frente al presupuesto 2026, y lo devengado en toda su vida frente a su costo.\n"
             "- **Atraso:** meses desde la última fecha de fin registrada; frente al plan original puede ser mayor. "
             "**Plan de gasto:** lo gastado de enero a octubre de 2026 frente a lo que la entidad planeó gastar en esos meses.")
@@ -212,7 +224,7 @@ def tarjeta(columna, pregunta, cifra, rotulo, lineas=()):
 # Nombres cortos de los temas de problemas, para las tarjetas
 TEMA_CORTO = {"Presupuesto o financiamiento": "presupuesto", "Liquidación o cierre pendiente": "liquidación o cierre",
               "Permisos, trámites o pronunciamientos de otras entidades": "permisos y trámites",
-              "Expediente técnico o estudios": "expediente técnico", "Documentos o información pendiente": "documentos pendientes",
+              "Expediente técnico o estudios": "expediente técnico o estudios", "Documentos o información pendiente": "documentos pendientes",
               "Contratista o contrato": "contratista", "Arbitraje o controversias": "arbitraje", "Proceso de contratación": "contratación",
               "Aún no programada o en espera de inicio": "en espera de inicio", "Terreno o saneamiento legal": "terreno",
               "Obra paralizada o suspendida": "obra paralizada", "Adicionales o ampliación de plazo": "adicionales o ampliación",
@@ -252,7 +264,7 @@ def tablero(clave, cartera):
         tarjeta(fila1[1], "¿Cuánto cambiaron los costos?", f"{'+' if p >= 0 else '−'}{abs(100 * p):.0f} %", "desde que se aprobaron",
                 [(millones(abs(r["desv_total"])), "más" if p >= 0 else "menos"),
                  (n_(r["n_subio_mas_20"]), "con alza de más de 20 %"),
-                 (n_(r["n_mas_que_duplico"]), "con costo duplicado o más")])
+                 (n_(r["n_mas_que_duplico"]), "con alza de más de 100 % (más del doble)")])
     else:
         tarjeta(fila1[1], "¿Cuánto cambiaron los costos?", "—", "sin montos para comparar")
 
@@ -269,7 +281,7 @@ def tablero(clave, cartera):
     # P5: financiamiento
     tarjeta(fila1[2], "¿Tienen financiamiento?", porc(r["pct_n_presupuesto"]), "con presupuesto 2026",
             [(n_(r["n_prog_2026_sin_pim"]), "con programación 2026, pero sin presupuesto"),
-             (n_(r["n_prog_2027"]), "con programación desde 2027"),
+             (n_(r["n_prog_2027"]), "sin presupuesto 2026, programados para 2027 o después"),
              (n_(r["n_sin_fin_falta"]), f"sin presupuesto ni programación · {millones(r['saldo_sin_fin_falta'])} por ejecutar")])
 
     # P7: atraso y cumplimiento del plan de gasto
@@ -289,7 +301,9 @@ def tablero(clave, cartera):
             filas = "".join(f'<span>{html.escape(t)}</span><span class="barra" title="{html.escape(t)}: {n:,} proyectos">'
                             f'<i style="width:{max(2, 85 * n / maximo):.0f}%"></i>{n:,}</span>' for t, n in temas.items())
             st.markdown(f'<div class="barras">{filas}</div>', unsafe_allow_html=True)
-            st.caption("Un proyecto puede tener varios temas. Clasificación con palabras clave del último reporte de seguimiento.")
+            st.caption("Un proyecto puede tener varios temas. Clasificación con palabras clave del último reporte de seguimiento. "
+                       "«Expediente técnico o estudios» reúne los reportes que los mencionan: no distingue si el expediente "
+                       "está vencido, en elaboración o tiene deficiencias.")
         else:
             st.write("Ningún proyecto reporta problemas.")
     with d2.expander("Ver el detalle del financiamiento"):
@@ -373,7 +387,7 @@ def elegir_estado(columna, tabla, clave):
 if sector == TODO:
     c1, c2, c3 = st.columns(3)
     c1.metric("Proyectos", f"{len(cartera):,}")
-    c2.metric("Cuestan en total", millones(cartera["costo"].sum()))
+    c2.metric("Costo total", millones(cartera["costo"].sum()))
     c3.metric("Atrasados", f"{(cartera['estado'] == 'Atrasado').sum():,}")
     st.markdown("".join(chip(e, int((cartera["estado"] == e).sum())) for e in ORDEN_ESTADOS), unsafe_allow_html=True)
     tablero(sector, cartera)
@@ -397,7 +411,7 @@ st.subheader(nombre_sector)
 m1, m2, m3 = st.columns([1.6, 1, 1.2])
 cartera_estado = elegir_estado(m1, cartera, "estado_ministerio")
 m2.metric("Proyectos", f"{len(cartera_estado):,}")
-m3.metric("Cuestan en total", millones(cartera_estado["costo"].sum()))
+m3.metric("Costo total", millones(cartera_estado["costo"].sum()))
 
 def etiqueta(texto, ancho=26):
     return "\\n".join(textwrap.wrap(texto.replace('"', "'"), ancho))
@@ -464,19 +478,44 @@ ORDENES = {"Estado: primero los que requieren atención": (["_orden", "costo"], 
            "Ejecución 2026: de menor a mayor": (["ejec_2026"], [True]),
            "Atraso: de mayor a menor": (["meses_atraso"], [False]), "Nombre: de la A a la Z": (["que_es"], [True])}
 b1, b2, _ = st.columns([1, 1.2, 1.8])
-busqueda = b1.text_input("Buscar", placeholder="Nombre, lugar o CUI")
+busqueda = b1.text_input("Buscar", placeholder="Nombre, lugar, unidad o CUI")
 orden = b2.selectbox("Ordenar por", list(ORDENES))
-if busqueda:
-    q = busqueda.strip().lower()
-    vista = vista[vista["que_es"].str.lower().str.contains(q, regex=False) | vista["lugar"].str.lower().str.contains(q, regex=False)
-                  | vista["id"].str.contains(q, regex=False)]
+# Búsqueda palabra por palabra: deben aparecer todas, en cualquier orden, sin importar tildes ni mayúsculas
+#   Antes: «hospital de Chupaca» solo funcionaba si esas palabras estaban juntas | Después: basta con «hospital» y «chupaca»
+PALABRAS_VACIAS = {"de", "del", "la", "el", "los", "las", "en", "y", "a", "al", "para", "por", "con"}
+
+def coincide(tabla, palabras):
+    """Marca (True/False) las filas cuyo texto de búsqueda contiene todas las palabras."""
+    marca = pd.Series(True, index=tabla.index)
+    for p in palabras:
+        marca &= tabla["_busqueda"].str.contains(p, regex=False)
+    return marca
+
+if busqueda.strip():
+    palabras = [p for p in sin_tildes(busqueda).split() if p not in PALABRAS_VACIAS] or sin_tildes(busqueda).split()
+    vista = vista[coincide(vista, palabras)]
+    if vista.empty:
+        # Si no hay resultados, decir dónde sí está (otra unidad o estado, u otro ministerio) o que no es del gobierno nacional
+        buscado = html.escape(busqueda.strip())
+        en_ministerio = coincide(cartera, palabras).sum()
+        en_otros = inversiones[coincide(inversiones, palabras)]["sector"].value_counts()
+        if en_ministerio:
+            st.info(f"«{buscado}» no aparece con esta unidad o estado, pero hay {en_ministerio:,} en esta cartera: "
+                    "elige «Todas las unidades» y «Todos los estados».")
+        elif len(en_otros):
+            st.info(f"«{buscado}» no está en esta cartera, pero sí en: "
+                    + ", ".join(f"{NOMBRES.get(s, s.title())} ({n:,})" for s, n in en_otros.head(3).items())
+                    + ". Elígela arriba, en «¿Qué cartera quieres ver?».")
+        else:
+            st.info(f"No encontramos «{buscado}». Esta versión solo tiene los proyectos del gobierno nacional: "
+                    "si es una obra de un gobierno regional o municipal, todavía no está aquí.")
 # sort_values(): reordena las filas según el orden elegido; los que no tienen dato (p. ej., sin atraso) van al final
 columnas_orden, ascendente = ORDENES[orden]
 vista = (vista.assign(_orden=vista["estado"].map(lambda e: ESTADOS[e][2]))
          .sort_values(columnas_orden, ascending=ascendente, na_position="last"))
 # Las cifras del nivel 3 van junto a los selectores, ya con todos los filtros aplicados
 f3.metric("Proyectos", f"{len(vista):,}")
-f4.metric("Cuestan en total", millones(vista["costo"].sum()))
+f4.metric("Costo total", millones(vista["costo"].sum()))
 
 # ============================================================
 # PASO 5.5: Paso 3 — la ficha de cinco preguntas (ventana emergente)

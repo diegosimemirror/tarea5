@@ -38,9 +38,19 @@
 - Las personas buscan una obra **por el nombre con que la conocen** ("hospital de Chupaca"), no por el nombre oficial, y no saben qué nivel de gobierno la ejecuta. Esto confirma que el siguiente paso son los gobiernos regionales y locales.
 
 ## Qué cambia en el producto
-- **Por hacer:**
-  - usar "costo total";
-  - definir en cada tarjeta "programación desde 2027", "costo duplicado o más" y "expediente técnico";
-  - buscar también en el nombre oficial, sin distinguir tildes y palabra por palabra;
-  - avisar cuando lo buscado no está en la cartera del gobierno nacional.
+- **Hecho el mismo 11/11/2026:**
+  - "Cuestan en total" pasó a **"Costo total"**.
+  - Las etiquetas dicen lo que miden:
+    - "con alza de más de 100 % (más del doble)";
+    - "sin presupuesto 2026, programados para 2027 o después";
+    - "expediente técnico o estudios", con una nota que aclara que no distingue si el expediente está vencido, en elaboración o tiene deficiencias.
+
+    Las mismas definiciones están en "¿Cómo se calculan el estado y los indicadores?".
+  - **La búsqueda** ahora:
+    - lee también el nombre oficial y la unidad ejecutora;
+    - no distingue tildes ni mayúsculas;
+    - busca palabra por palabra.
+
+    Si no encuentra nada, dice dónde sí está (otra unidad, otro estado u otro ministerio) o avisa que esta versión solo tiene el gobierno nacional. "Bernales" pasa de 4 a 9 proyectos en Salud; "hospital de Chupaca" muestra el aviso.
+- **Por hacer:** hacer la herramienta más amigable e intuitiva, con más pruebas de uso.
 - **Siguiente versión:** gobiernos regionales y locales (ya figura en "Qué sigue" del README).
