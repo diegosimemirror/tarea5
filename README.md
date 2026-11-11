@@ -54,7 +54,16 @@ Busco facilitar la comunicación de información densa para la toma de decisione
   streamlit run app/app.py
   ```
   Los archivos procesados ya vienen en `data/procesado/`, así que basta con el último comando.
-- **Capturas:** **POR COMPLETAR** (3).
+- **Capturas** (app pública, datos del MEF al 08/11/2026):
+  1. La cartera completa y sus cinco indicadores.
+
+     ![Cartera completa con sus cinco indicadores](docs/capturas/01_cartera_completa.png)
+  2. Un ministerio: el árbol con sus unidades ejecutoras. En rojo, las que tienen al menos un proyecto atrasado.
+
+     ![Árbol de la cartera del Ministerio de Salud](docs/capturas/02_arbol_ministerio.png)
+  3. La ficha de un proyecto, el hospital Sergio Bernales, con el título escrito por la IA a partir de la descripción del MEF.
+
+     ![Ficha del hospital Sergio Bernales](docs/capturas/03_ficha_proyecto.png)
 - **Arquitectura:**
   ```mermaid
   flowchart LR

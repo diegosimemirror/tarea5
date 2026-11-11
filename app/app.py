@@ -481,7 +481,15 @@ f4.metric("Cuestan en total", millones(vista["costo"].sum()))
 # ============================================================
 # PASO 5.5: Paso 3 — la ficha de cinco preguntas (ventana emergente)
 # ============================================================
-@st.dialog("Ficha del proyecto", width="large")
+# Al cerrar la ficha, la página se vuelve a dibujar (on_dismiss="rerun"): así la lista aparece de nuevo sin «Ver ficha»
+#   marcado y el siguiente clic (por ejemplo, en «Ubicar») no se pierde. Si la versión de Streamlit no tiene esa opción,
+#   la ficha funciona igual, sin ese ajuste.
+try:
+    ventana_ficha = st.dialog("Ficha del proyecto", width="large", on_dismiss="rerun")
+except TypeError:
+    ventana_ficha = st.dialog("Ficha del proyecto", width="large")
+
+@ventana_ficha
 def ficha(fila):
     st.markdown(chip(fila["estado"]) + f' <span style="color:#5b6068">{html.escape(fila["estado_motivo"])}</span>', unsafe_allow_html=True)
     texto = lambda col: fila[col] if isinstance(fila.get(col), str) else ""   # columnas del Proceso 7 (vacío si falta)
@@ -664,7 +672,8 @@ with st.expander("Mapa: ¿dónde están los proyectos de la lista?", expanded=Tr
         if len(marcados):
             con_punto = marcados.dropna(subset=["lat", "lon"])
             sin_punto = marcados[marcados["lat"].isna() | marcados["lon"].isna()]
-            texto_marcados = "; ".join(f"{q[:70]} ({l})" for q, l in zip(con_punto["que_es"], con_punto["lugar"]))
+            # Solo la parte «qué hace» del título (antes de «para»), para no cortarlo a la mitad
+            texto_marcados = "; ".join(f"{q.split(' para ')[0][:90]} ({l})" for q, l in zip(con_punto["que_es"], con_punto["lugar"]))
             if len(con_punto):
                 st.markdown(f'<p class="nota"><b style="color:#103f91">◯</b> Resaltado en el mapa: {html.escape(texto_marcados)}</p>',
                             unsafe_allow_html=True)
