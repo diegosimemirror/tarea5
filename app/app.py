@@ -51,7 +51,12 @@ def cargar():
         ["id", "brechas_lista", "frase_brecha", "frase_costo", "frase_dinero", "frase_problemas", "frase_programacion",
          "clase_problema", "temas", "pct_gastado_vida", "pct_gastado_2026", "frase_indice", "frase_alerta", "alerta_gasto_avance",
          "meses_atraso"]]
-    return tabla.merge(frases, on="id", how="left")
+    tabla = tabla.merge(frases, on="id", how="left")
+    # Ejecución presupuestal en % (las mismas dos medidas de la ficha), para la lista y el mapa
+    #   Antes: proporciones (0.153) | Después: porcentajes (15.3); sin presupuesto 2026 queda vacío
+    tabla["ejec_2026"] = 100 * tabla["pct_gastado_2026"]
+    tabla["ejec_acum"] = 100 * tabla["pct_gastado_vida"]
+    return tabla
 
 @st.cache_data
 def cargar_indicadores():
@@ -393,7 +398,9 @@ vista = elegir_estado(f2, vista, "estado_unidad")
 # Órdenes posibles de la lista: (columnas, ¿de menor a mayor?) para sort_values()
 ORDENES = {"Estado: primero los que requieren atención": (["_orden", "costo"], [True, False]),
            "Costo: de mayor a menor": (["costo"], [False]), "Costo: de menor a mayor": (["costo"], [True]),
-           "Avance: de menor a mayor": (["avance"], [True]), "Avance: de mayor a menor": (["avance"], [False]),
+           "Ejecución acumulada: de menor a mayor": (["ejec_acum"], [True]),
+           "Ejecución acumulada: de mayor a menor": (["ejec_acum"], [False]),
+           "Ejecución 2026: de menor a mayor": (["ejec_2026"], [True]),
            "Atraso: de mayor a menor": (["meses_atraso"], [False]), "Nombre: de la A a la Z": (["que_es"], [True])}
 b1, b2, b3 = st.columns([1, 1.2, 1.8])
 busqueda = b1.text_input("Buscar", placeholder="Nombre, lugar o CUI")
@@ -505,7 +512,9 @@ tabla = pd.DataFrame({
     "Estado": vista["estado"].map(lambda e: f"{ESTADOS[e][1]} {e}"),     # el símbolo acompaña al nombre del estado
     "Proyecto": vista["que_es"],
     "Costo (S/)": vista["costo"].round(0),
-    "Avance": vista["avance"].clip(0, 100).round(0),
+    # Las mismas dos medidas de "¿Cuánto se ha ejecutado?" en la ficha (el avance declarado queda para especialistas)
+    "Ejecución 2026": vista["ejec_2026"].clip(0, 100).round(0),            # vacío si no tiene presupuesto 2026
+    "Ejecución acumulada": vista["ejec_acum"].clip(0, 100).round(0),
     "Atraso (meses)": vista["meses_atraso"].fillna(0).astype(int),   # 0 si no está atrasado (la tabla mostraría "None")
     "Lugar": vista["lugar"],
 })
@@ -527,10 +536,15 @@ editada = st.data_editor(
     column_config={
         "Ficha": st.column_config.CheckboxColumn("Ver ficha", help="Marca la casilla para abrir la ficha del proyecto", width=90),
         "Mapa": st.column_config.CheckboxColumn("Ubicar", help="Marca la casilla para resaltar el proyecto en el mapa", width=75),
-        "Proyecto": st.column_config.TextColumn("Proyecto", width="large"),
-        "Costo (S/)": st.column_config.NumberColumn("Costo (S/)", format="localized"),
-        "Avance": st.column_config.ProgressColumn("Avance", min_value=0, max_value=100, format="%.0f%%"),
-        "Atraso (meses)": st.column_config.NumberColumn("Atraso (meses)", format="%d"),
+        # Anchos en píxeles para que las cifras clave se vean sin desplazarse; el lugar y la unidad quedan a la derecha
+        "Estado": st.column_config.TextColumn("Estado", width=150),
+        "Proyecto": st.column_config.TextColumn("Proyecto", width=290),
+        "Costo (S/)": st.column_config.NumberColumn("Costo (S/)", format="localized", width=95),
+        "Ejecución 2026": st.column_config.ProgressColumn("Ejecución 2026", min_value=0, max_value=100, format="%.0f%%",
+                                                          help="Lo gastado en 2026 frente a su presupuesto 2026", width=115),
+        "Ejecución acumulada": st.column_config.ProgressColumn("Ejecución acumulada", min_value=0, max_value=100, format="%.0f%%",
+                                                               help="Lo gastado en toda su vida frente a su costo", width=125),
+        "Atraso (meses)": st.column_config.NumberColumn("Atraso (meses)", format="%d", width=95),
     })
 st.caption(plural(len(vista), "proyecto") + ("" if unidad == "Todas las unidades" else f" de {unidad.title()}")
            + ". Marca «Ver ficha» para abrir la ficha de un proyecto, o «Ubicar» para resaltarlo en el mapa (al final de la página).")
@@ -569,7 +583,8 @@ with st.expander("Mapa: ¿dónde están los proyectos de la lista?", expanded=Tr
         datos_mapa = pd.DataFrame({
             "lat": puntos["lat"], "lon": puntos["lon"], "color": puntos["estado"].map(lambda e: rgb(ESTADOS[e][0])),
             "titulo": puntos["que_es"].str.slice(0, 90), "estado": puntos["estado"],
-            "costo": puntos["costo"].map(millones), "avance": puntos["avance"].map(lambda a: f"{a:.0f} % de avance")})
+            "costo": puntos["costo"].map(millones),
+            "avance": puntos["ejec_acum"].map(lambda a: f"{a:.0f} % de ejecución acumulada" if pd.notna(a) else "")})
         capa = pdk.Layer("ScatterplotLayer", data=datos_mapa, get_position=["lon", "lat"], get_fill_color="color",
                          get_radius=3000, radius_min_pixels=4, radius_max_pixels=12, pickable=True,
                          stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1)
