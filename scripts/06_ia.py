@@ -15,6 +15,7 @@
 # argparse: leer opciones como --sector · json: armar y leer JSON · os: leer la clave del archivo .env
 # re: buscar cifras en los textos · time: pausas entre pedidos · urllib: llamar a la API · datetime: fecha del resultado
 import argparse, json, os, re, time, urllib.error, urllib.request
+import unicodedata   # unicodedata: normaliza las tildes, que pueden venir escritas de dos formas
 from datetime import date
 from pathlib import Path
 import pandas as pd
@@ -43,6 +44,8 @@ INSTRUCCIONES = (
     "(por ejemplo, 'para mejorar su servicio de cuidado diurno', 'para mejorar el acceso al registro civil y la "
     "identificación', 'para dar agua potable a la comunidad', 'para acercar los servicios del Estado a la población "
     "rural'). El PARA QUÉ nunca repite la acción ('construye un Tambo para crear el Tambo' está mal). "
+    "Escribe en minúsculas normales (solo la inicial y los nombres propios con mayúscula), aunque el nombre oficial "
+    "esté en MAYÚSCULAS. "
     "Nombra el servicio o la instalación en palabras comunes (centro infantil, posta de salud, hospital, colegio, sistema "
     "de agua potable, carretera, oficinas de atención) y escribe las siglas con su significado (CIAI = centro infantil; "
     "EESS = establecimiento de salud; IE = colegio; MIDIS = Ministerio de Desarrollo e Inclusión Social, o déjalo como "
@@ -81,9 +84,23 @@ def cifras(texto):
     'Abre 1,200 puntos y 02 ventanillas' -> {'1200', '2'} (así '02' en el MEF y '2' en el título son la misma cifra)."""
     return {re.sub(r"[.,]", "", n).lstrip("0") or "0" for n in re.findall(r"\d[\d.,]*\d|\d", texto)}
 
+def bien_escrito(titulo):
+    """Control del verbo inicial: debe ser un verbo en presente bien escrito (Construye, Instala, Amplía...).
+    Descarta errores de la IA como 'MejorA', 'Construy', 'Adecuaba', 'Adecuade' o 'Ampliación'."""
+    titulo = unicodedata.normalize("NFC", titulo)                            # 'ú' escrita de una sola forma
+    verbo = titulo.split()[0].rstrip(",") if titulo.split() else ""
+    letras = [c for c in titulo if c.isalpha()]
+    return (sum(c.isupper() for c in letras) <= 0.3 * max(len(letras), 1)  # no escrito en MAYÚSCULAS
+            and verbo[:1].isupper() and verbo[1:] == verbo[1:].lower()        # sin mayúsculas en medio
+            and verbo[-1:] in ("a", "e")                                    # presente: Construye, Instala, Da
+            and not verbo.endswith("aba")                                   # no en pasado: Adecuaba
+            and not (verbo.startswith("Adecu") and verbo != "Adecúa")      # 'adecuar' mal conjugado
+            and verbo not in ("Rehabila",))
+
 def valido(titulo, fuente):
-    """Control automático: el título no está vacío, es corto y todas sus cifras están en el texto del MEF."""
-    return bool(titulo) and len(titulo) <= 220 and cifras(titulo) <= cifras(fuente)
+    """Control automático: el título no está vacío, es corto, empieza con un verbo bien escrito
+    y todas sus cifras están en el texto del MEF."""
+    return bool(titulo) and len(titulo) <= 220 and bien_escrito(titulo) and cifras(titulo) <= cifras(fuente)
 
 LARGO_MAXIMO = 150      # caracteres: si un título pasa de esto, se pide a la IA que lo sintetice
 
