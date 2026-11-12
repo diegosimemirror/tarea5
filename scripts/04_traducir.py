@@ -1,6 +1,6 @@
 # ============================================================
 # PROCESO 4: Traducir cada inversión a cinco preguntas en lenguaje simple
-# Insumo:    data/procesado/gobierno_nacional.parquet
+# Insumo:    data/procesado/inversiones.parquet
 # Resultado: data/procesado/cinco_preguntas.parquet, con las columnas:
 #            que_es, problema, cuanto, cuando, estado, estado_motivo (y los datos para mostrarlas)
 #            Versión con REGLAS. Cuando haya API de IA, la IA reescribirá "que_es" y "problema".
@@ -20,7 +20,7 @@ HOY = pd.Timestamp("2026-11-10")
 CIERRE_ANIO = pd.Timestamp("2026-12-31")
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
-base = pd.read_parquet(PROCESADO / "gobierno_nacional.parquet")
+base = pd.read_parquet(PROCESADO / "inversiones.parquet")
 # El único CUI repetido (2022788) tiene dos filas distintas: se les da un identificador propio a cada una
 base["id"] = base["id"] + base.groupby("id").cumcount().map(lambda n: "" if n == 0 else f"-{n + 1}")
 

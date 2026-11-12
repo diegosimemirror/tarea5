@@ -1,8 +1,9 @@
 # ============================================================
 # PROCESO 7: Calcular los indicadores de cartera (enfoque de portafolio / PMO)
-# Insumo:    data/procesado/cinco_preguntas.parquet (Proceso 4) y data/procesado/brechas_gobierno_nacional.parquet (Proceso 3)
+# Insumo:    data/procesado/cinco_preguntas.parquet (Proceso 4) y data/procesado/brechas.parquet (Proceso 3)
 # Resultado: data/procesado/indicadores_proyecto.parquet  (una fila por inversión)
-#            data/procesado/indicadores_cartera.parquet   (una fila por ministerio o entidad + la cartera completa)
+#            data/procesado/indicadores_cartera.parquet   (una fila por ministerio, entidad o gobierno regional,
+#                                                          una por nivel de gobierno y el portafolio total)
 #            docs/indicadores_resultados.md               (definiciones y cifras, para revisar)
 # Preguntas: P1 brecha · P2 presupuesto pendiente · P3 desviación del costo · P4 problemas reportados
 #            P5 financiamiento · P7 atraso.  (La P6, alineamiento estratégico, queda fuera por decisión del founder.)
@@ -13,12 +14,16 @@
 # pathlib: rutas de archivos (viene con Python)
 # pandas: tablas; pyarrow: leer y guardar parquet (se instalan una vez)
 from pathlib import Path
+import sys
 import pandas as pd
 
 RAIZ = Path(__file__).resolve().parents[1]
+# resumen_cartera (en app/): la función que resume un grupo de inversiones; la usan este proceso y la app
+sys.path.insert(0, str(RAIZ / "app"))
+from resumen_cartera import resumen, proporcion, GRUPOS_FIN
 PROCESADO, DOCS = RAIZ / "data" / "procesado", RAIZ / "docs"
 HOY = pd.Timestamp("2026-11-10")      # misma fecha de referencia que el Proceso 4
-TODO = "CARTERA COMPLETA"
+TODO = "PORTAFOLIO TOTAL"
 
 def millones(x):
     """Monto legible. Antes: 16302345678.9 | Después: 'S/ 16.3 mil millones'."""
@@ -32,17 +37,15 @@ def porc(x):
     """Porcentaje al estilo de la app. Antes: 0.1 | Después: "10 %"."""
     return f"{100 * x:.0f} %"
 
-def proporcion(a, b):
-    """a / b, o faltante si b es 0 o falta (evita divisiones entre cero)."""
-    return a / b if pd.notna(b) and b != 0 else float("nan")
 
 # ============================================================
 # PASO 7.1: Cargar
 # ============================================================
 inv = pd.read_parquet(PROCESADO / "cinco_preguntas.parquet")
-brechas = pd.read_parquet(PROCESADO / "brechas_gobierno_nacional.parquet")
+brechas = pd.read_parquet(PROCESADO / "brechas.parquet")
 print("7.1 Inversiones:", inv.shape, "| filas de brechas:", brechas.shape)
-ind = inv[["id", "cui", "sector", "unidad", "tipo", "marco", "estado", "avance", "costo", "viable"]].copy()
+ind = inv[["id", "cui", "nivel", "cartera", "sector", "entidad", "unidad", "tipo", "tipo_grupo", "marco", "estado", "avance",
+           "costo", "viable"]].copy()
 
 # ============================================================
 # P1 — PASO 7.2: ¿Qué brecha cubre cada inversión?
@@ -178,9 +181,6 @@ print("    temas:", {t: int(ind[c].sum()) for t, c in columnas_tema}, "| otros:"
 #     3. Programado para 2027 en adelante (años 2 a 4 > 0)
 #     4 y 5. Sin financiamiento ni programación: se separan los prácticamente terminados (avance >= 95 %), que ya no lo necesitan
 # ============================================================
-GRUPOS_FIN = [("Con presupuesto 2026", "con_pim"), ("Programado para 2026, sin presupuesto", "prog_2026_sin_pim"),
-              ("Programado para 2027 en adelante", "prog_2027"), ("Sin financiamiento – le falta ejecutar", "sin_fin_falta"),
-              ("Sin financiamiento – prácticamente terminado", "sin_fin_terminado")]
 NIVEL_FIN = {GRUPOS_FIN[0][0]: "Con presupuesto 2026", GRUPOS_FIN[1][0]: "Programado, sin presupuesto",
              GRUPOS_FIN[2][0]: "Programado, sin presupuesto", GRUPOS_FIN[3][0]: "Sin financiamiento ni programación",
              GRUPOS_FIN[4][0]: "Sin financiamiento ni programación"}
@@ -351,73 +351,26 @@ print("7.7b Ejemplo (INSN San Borja, 2547701):", ind.loc[ind["cui"] == "2547701"
 
 # ============================================================
 # PASO 7.8: Resumir por ministerio o entidad y para la cartera completa
-#   Antes: 12 731 filas (una por inversión) | Después: 34 filas (33 sectores + la cartera completa)
+#   Antes: una fila por inversión | Después: una fila por cartera (sector o gobierno regional), por nivel y el total
 # ============================================================
-def resumen(g):
-    pim = g["pim_2026"].sum(); dev = g["dev_2026"].sum()
-    comp = g["desv_total"].notna()
-    con_pim = g["pim_2026"] > 0
-    fila = {
-        "n": len(g), "costo": g["costo"].sum(),
-        # P1
-        "n_con_brecha": int(g["tiene_brecha"].sum()), "pct_con_brecha": g["tiene_brecha"].mean(),
-        "n_varias_brechas": int((g["n_brechas_total"] >= 2).sum()),
-        # P2
-        "pim_2026": pim, "dev_2026": dev, "certificado_2026": g["certificado_2026"].sum(),
-        "pendiente_2026": g["pendiente_2026"].sum(), "pct_pendiente_2026": proporcion(g["pendiente_2026"].sum(), pim),
-        "n_con_pim": int(con_pim.sum()), "n_mas_mitad_pendiente": int((g["pct_pendiente_2026"] > 0.5).sum()),
-        "n_sin_gasto_2026": int((con_pim & (g["dev_2026"] == 0)).sum()),
-        "saldo_total": g["saldo_total"].sum(), "pct_saldo_total": proporcion(g["saldo_total"].sum(), g["costo"].sum()),
-        # P3
-        "viable_comparable": g.loc[comp, "viable"].sum(), "costo_comparable": g.loc[comp, "costo"].sum(),
-        "desv_total": g["desv_total"].sum(), "pct_desv_total": proporcion(g["desv_total"].sum(), g.loc[comp, "viable"].sum()),
-        "n_subio": int((g["pct_desv_total"] > 0.001).sum()), "n_bajo": int((g["pct_desv_total"] < -0.001).sum()),
-        "n_subio_mas_20": int((g["pct_desv_total"] > 0.2).sum()), "n_mas_que_duplico": int((g["pct_desv_total"] > 1).sum()),
-        "n_con_laudo": int((g["laudo"] > 0).sum()), "laudo_total": g["laudo"].sum(),
-        # P4
-        "n_reporta_problemas": int((g["clase_problema"] == "Reporta problemas").sum()),
-        "n_dice_sin_problemas": int((g["clase_problema"] == "Dice que no hay problemas").sum()),
-        "n_sin_seguimiento": int(g["clase_problema"].isin(["Sin reporte de seguimiento", "Sin texto de problemas"]).sum()),
-        **{"n_" + c: int(g[c].sum()) for _, c in columnas_tema},
-        # P7
-        "n_atrasados": int(g["atrasado"].sum()),
-        "mediana_meses_atraso": g.loc[g["atrasado"], "meses_atraso"].median(),
-        "n_atraso_mas_12": int((g["meses_atraso"] > 12).sum()), "n_atraso_mas_36": int((g["meses_atraso"] > 36).sum()),
-        "programado_ene_oct": g["programado_ene_oct"].sum(), "devengado_ene_oct": g.loc[g["programado_ene_oct"] > 0, "devengado_ene_oct"].sum(),
-        "n_bajo_70_programacion": int((g["pct_cumple_programacion"] < 0.7).sum()),
-        # Avance frente a gasto (solo proyectos con avance declarado en 2026, comparados en la misma fecha)
-        "n_avance_declarado": int((g["avance_fuente"] == "declarado por la entidad").sum()),
-        "n_comparables_avance": int(g["valor_avanzado"].notna().sum()),
-        "n_alerta_gasto_avance": int(g["alerta_gasto_avance"].sum()),
-        "valor_avanzado": g["valor_avanzado"].sum(), "gastado_a_la_declaracion": g["gastado_a_la_declaracion"].sum(),
-        "costo_comparable_avance": g.loc[g["valor_avanzado"].notna(), "costo"].sum(),
-    }
-    fila["pct_cumple_programacion"] = proporcion(fila["devengado_ene_oct"], fila["programado_ene_oct"])
-    fila["pct_avance_declarado"] = proporcion(fila["valor_avanzado"], fila["costo_comparable_avance"])
-    fila["pct_gastado_comparable"] = proporcion(fila["gastado_a_la_declaracion"], fila["costo_comparable_avance"])
-    fila["indice_avance_gasto"] = proporcion(fila["valor_avanzado"], fila["gastado_a_la_declaracion"])
-    # P5: los cinco grupos con su número, costo y saldo; y los tres niveles en porcentaje de proyectos y de costo
-    for grupo, clave in GRUPOS_FIN:
-        m = g["financiamiento"] == grupo
-        fila[f"n_{clave}"], fila[f"costo_{clave}"], fila[f"saldo_{clave}"] = int(m.sum()), g.loc[m, "costo"].sum(), g.loc[m, "saldo_total"].sum()
-    for nivel, clave in [("Con presupuesto 2026", "presupuesto"), ("Programado, sin presupuesto", "programado"),
-                         ("Sin financiamiento ni programación", "sin_nada")]:
-        m = g["nivel_financiamiento"] == nivel
-        fila[f"pct_n_{clave}"] = m.mean()
-        fila[f"pct_costo_{clave}"] = proporcion(g.loc[m, "costo"].sum(), g["costo"].sum())
-    return pd.Series(fila)
 
-por_sector = ind.groupby("sector").apply(resumen, include_groups=False)
+# groupby().apply(resumen): una fila por grupo. Antes: 26 412 inversiones | Después: 1 total + 2 niveles + 60 carteras
+por_cartera = ind.groupby("cartera").apply(resumen, include_groups=False)
+por_nivel = ind.groupby("nivel").apply(resumen, include_groups=False)
+por_nivel.index = por_nivel.index.str.upper()          # "GOBIERNO NACIONAL", "GOBIERNO REGIONAL"
 total = resumen(ind).to_frame(TODO).T
-cartera = pd.concat([total, por_sector]).rename_axis("sector").reset_index()
+cartera = pd.concat([total, por_nivel, por_cartera]).rename_axis("cartera").reset_index()
+NIVELES = list(por_nivel.index)
 print("7.8 Resumen:", cartera.shape)
 
 # ============================================================
 # PASO 7.9: Verificar que los totales cuadran y guardar
 # ============================================================
 assert len(ind) == len(inv), "se perdieron o duplicaron inversiones"
-assert abs(cartera.loc[cartera["sector"] != TODO, "costo"].sum() - cartera.loc[cartera["sector"] == TODO, "costo"].iloc[0]) < 1, "la suma por sector no cuadra"
-assert cartera.loc[cartera["sector"] != TODO, "n"].sum() == len(ind)
+solo_carteras = ~cartera["cartera"].isin([TODO] + NIVELES)
+assert abs(cartera.loc[solo_carteras, "costo"].sum() - cartera.loc[cartera["cartera"] == TODO, "costo"].iloc[0]) < 1, "la suma por cartera no cuadra"
+assert cartera.loc[solo_carteras, "n"].sum() == len(ind)
+assert cartera.loc[cartera["cartera"].isin(NIVELES), "n"].sum() == len(ind), "la suma por nivel no cuadra"
 ind.to_parquet(PROCESADO / "indicadores_proyecto.parquet", index=False)
 cartera.to_parquet(PROCESADO / "indicadores_cartera.parquet", index=False)
 print("7.9 Guardados:", ind.shape, cartera.shape)
@@ -425,14 +378,14 @@ print("7.9 Guardados:", ind.shape, cartera.shape)
 # ============================================================
 # PASO 7.10: Escribir el informe de resultados (docs/indicadores_resultados.md)
 # ============================================================
-t = cartera.set_index("sector").loc[TODO]
+t = cartera.set_index("cartera").loc[TODO]
 pct = lambda x: f"{x:.0%}" if pd.notna(x) else "sin dato"
 n = lambda x: f"{int(x):,}".replace(",", " ")
 lineas = [
     "# Indicadores de cartera (enfoque de portafolio)", "",
-    f"> Generado por `scripts/07_indicadores.py`. Gobierno nacional, datos del MEF al 08/11/2026, fecha de referencia {HOY:%d/%m/%Y}.",
+    f"> Generado por `scripts/07_indicadores.py`. Gobierno nacional y gobiernos regionales, datos del MEF al 08/11/2026, fecha de referencia {HOY:%d/%m/%Y}.",
     "> Las preguntas siguen la numeración del founder; la P6 (alineamiento estratégico) queda fuera.", "",
-    "## Cartera completa", "",
+    "## Portafolio total (gobierno nacional y gobiernos regionales)", "",
     f"**{n(t['n'])} inversiones**, con un costo actualizado de **{millones(t['costo'])}**.", "",
     "### P1. Brecha que cubre cada inversión",
     f"- Con al menos una brecha: **{n(t['n_con_brecha'])} ({pct(t['pct_con_brecha'])})**; con dos o más: {n(t['n_varias_brechas'])}.",
@@ -477,14 +430,14 @@ lineas = [
     "- Se mide contra la última fecha de fin registrada; el atraso frente al plan original puede ser mayor.",
     f"- Programación 2026 (12-B): de enero a octubre se programó {millones(t['programado_ene_oct'])} y se gastó "
     f"{millones(t['devengado_ene_oct'])} (**{pct(t['pct_cumple_programacion'])}**). {n(t['n_bajo_70_programacion'])} inversiones gastaron menos del 70 % de lo programado.", "",
-    "## Por ministerio o entidad (de mayor a menor costo)", "",
-    "| Ministerio o entidad | Inversiones | Costo | Con brecha | Falta gastar 2026 | Desviación del costo | Reportan problemas | Con presupuesto 2026 | Atrasadas (mediana) |",
+    "## Por ministerio, entidad o gobierno regional (de mayor a menor costo)", "",
+    "| Ministerio, entidad o gobierno regional | Inversiones | Costo | Con brecha | Falta gastar 2026 | Desviación del costo | Reportan problemas | Con presupuesto 2026 | Atrasadas (mediana) |",
     "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
 ]
-for _, f in cartera[cartera["sector"] != TODO].sort_values("costo", ascending=False).iterrows():
+for _, f in cartera[solo_carteras].sort_values("costo", ascending=False).iterrows():
     mediana = f"{f['mediana_meses_atraso']:.0f} m" if pd.notna(f["mediana_meses_atraso"]) else "—"
     nombre = " ".join(p if i == 0 or p not in ("Y", "De", "Del", "La", "E") else p.lower()
-                      for i, p in enumerate(f["sector"].title().split()))   # "Desarrollo E Inclusion" -> "Desarrollo e Inclusion"
+                      for i, p in enumerate(f["cartera"].title().split()))   # "Desarrollo E Inclusion" -> "Desarrollo e Inclusion"
     lineas.append(f"| {nombre} | {n(f['n'])} | {millones(f['costo'])} | {pct(f['pct_con_brecha'])} | {pct(f['pct_pendiente_2026'])} "
                   f"| {pct(f['pct_desv_total'])} | {n(f['n_reporta_problemas'])} | {pct(f['pct_n_presupuesto'])} | {n(f['n_atrasados'])} ({mediana}) |")
 lineas += ["", "## Definiciones y advertencias", "",

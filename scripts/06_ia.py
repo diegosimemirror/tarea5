@@ -138,11 +138,16 @@ def main():
     p.add_argument("--limite", type=int, default=200, help="Máximo de proyectos a procesar en esta corrida (tope de gasto)")
     p.add_argument("--ensayo", action="store_true", help="Muestra lo que se enviaría, sin llamar a la IA")
     p.add_argument("--rehacer", action="store_true", help="Vuelve a procesar los proyectos elegidos aunque ya tengan título")
+    p.add_argument("--incluir-regionales", action="store_true",
+                   help="Titula también los gobiernos regionales (sin esta opción, solo el gobierno nacional)")
     a = p.parse_args()
 
     # Proyectos con una descripción útil (más de 30 caracteres), de mayor a menor costo
     base = pd.read_parquet(PROCESADO / "cinco_preguntas.parquet")
     base = base[base["alternativa"].fillna("").str.strip().str.len() > 30]
+    # Solo el gobierno nacional, salvo que se pida lo contrario: titular los regionales queda pendiente (decisión del 12/11/2026)
+    if not a.incluir_regionales:
+        base = base[base["nivel"] == "Gobierno nacional"]
     if a.sector:
         base = base[base["sector"].isin(a.sector)]
     previas = pd.read_parquet(SALIDA) if SALIDA.exists() else pd.DataFrame(columns=["id", "titulo_ia", "modelo", "fecha"])

@@ -1,8 +1,8 @@
 # ============================================================
-# PROCESO 3: Preparar la base de inversiones del gobierno nacional
+# PROCESO 3: Preparar la base de inversiones del gobierno nacional y de los gobiernos regionales
 # Insumo:    data/crudo/DETALLE_INVERSIONES.csv, INVERSIONES_BRECHAS.csv y FORMATO_12B.csv
-# Resultado: data/procesado/gobierno_nacional.parquet (una fila por inversión, con su brecha y su último 12-B)
-#            data/procesado/brechas_gobierno_nacional.parquet (todas las brechas: una fila por inversión y brecha)
+# Resultado: data/procesado/inversiones.parquet (una fila por inversión, con su brecha y su último 12-B)
+#            data/procesado/brechas.parquet (todas las brechas: una fila por inversión y brecha)
 #            Se conservan las columnas originales de los valores que se marcan como no válidos.
 # Uso:       uv run --with pandas --with pyarrow python scripts/03_preparar.py
 # ============================================================
@@ -23,23 +23,24 @@ def texto(serie):
     return serie.fillna("").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
 
 # ============================================================
-# PASO 3.1: Cargar el detalle y quedarse con el gobierno nacional
-#   Antes: 150 641 inversiones de todo el país | Después: solo NIVEL = "GN"
+# PASO 3.1: Cargar el detalle y quedarse con el gobierno nacional y los gobiernos regionales
+#   Antes: 150 641 inversiones de todo el país | Después: solo NIVEL = "GN" (nacional) y "GR" (regional)
+#   Los gobiernos locales (NIVEL = "GL", 124 229 inversiones) quedan para una versión posterior.
 # ============================================================
 detalle = pd.read_csv(CRUDO / "DETALLE_INVERSIONES.csv", dtype=str, encoding="utf-8-sig", keep_default_na=False)
-gn = detalle[detalle["NIVEL"] == "GN"].copy()
-print("3.1 Gobierno nacional:", len(gn), "de", len(detalle))
+inv = detalle[detalle["NIVEL"].isin(["GN", "GR"])].copy()
+print("3.1 Nacional y regional:", len(inv), "de", len(detalle), "|", inv["NIVEL"].value_counts().to_dict())
 
 # ============================================================
 # PASO 3.2: Duplicados e identificador
 #   drop_duplicates(): elimina solo filas idénticas en todas las columnas (no se pierde información)
 #   Las inversiones antiguas sin CUI se identifican con su código SNIP
 # ============================================================
-antes = len(gn)
-gn = gn.drop_duplicates()
-print("3.2 Filas idénticas eliminadas:", antes - len(gn))
-gn["id"] = gn["CODIGO_UNICO"].where(gn["CODIGO_UNICO"] != "", "SNIP-" + gn["CODIGO_SNIP"])
-print("    Identificadores repetidos que quedan:", gn["id"].duplicated().sum(), "| sin CUI (usan SNIP):", (gn["CODIGO_UNICO"] == "").sum())
+antes = len(inv)
+inv = inv.drop_duplicates()
+print("3.2 Filas idénticas eliminadas:", antes - len(inv))
+inv["id"] = inv["CODIGO_UNICO"].where(inv["CODIGO_UNICO"] != "", "SNIP-" + inv["CODIGO_SNIP"])
+print("    Identificadores repetidos que quedan:", inv["id"].duplicated().sum(), "| sin CUI (usan SNIP):", (inv["CODIGO_UNICO"] == "").sum())
 
 # ============================================================
 # PASO 3.3: Convertir números y fechas
@@ -57,26 +58,26 @@ numeros = {"MONTO_VIABLE": "viable", "COSTO_ACTUALIZADO": "costo", "CTRL_CONCURR
            # componente del SSI (verDetEstimacion) en 3 proyectos. AVANCE_FISICO es lo mismo, pero solo con los productos.
            "AVANCE_EJECUCION": "avance_ejecucion_original"}
 for col, nuevo in numeros.items():
-    gn[nuevo] = pd.to_numeric(gn[col], errors="coerce")
+    inv[nuevo] = pd.to_numeric(inv[col], errors="coerce")
 for col, nuevo in {"FECHA_VIABILIDAD": "fecha_viable", "FEC_INI_EJECUCION": "inicio", "FEC_FIN_EJECUCION": "fin",
                    "FEC_INI_EJEC_FISICA": "inicio_fisico", "FEC_FIN_EJEC_FISICA": "fin_fisico",
                    "ULT_FEC_DECLA_ESTIM": "fecha_declaracion"}.items():   # fecha en que la entidad declaró su avance
-    gn[nuevo] = pd.to_datetime(gn[col], errors="coerce")
-gn["dev_acumulado"] = gn["dev_hasta_2025"].fillna(0) + gn["dev_2026"].fillna(0)
+    inv[nuevo] = pd.to_datetime(inv[col], errors="coerce")
+inv["dev_acumulado"] = inv["dev_hasta_2025"].fillna(0) + inv["dev_2026"].fillna(0)
 
 # ============================================================
 # PASO 3.4: Marcar valores imposibles como faltantes (sin borrar la columna original)
 #   Avance físico > 100 %; beneficiarios > 35 millones (más que la población del Perú);
 #   coordenadas fuera del Perú (incluye las que vienen en 0)
 # ============================================================
-gn["avance_fisico"] = gn["avance_fisico_original"].where(gn["avance_fisico_original"] <= 100)
-gn["avance_ejecucion"] = gn["avance_ejecucion_original"].where(gn["avance_ejecucion_original"] <= 100)
-gn["beneficiarios"] = gn["beneficiarios_original"].where(gn["beneficiarios_original"] <= 35_000_000)
-en_peru = gn["lat_original"].between(-18.5, 0.1) & gn["lon_original"].between(-81.5, -68.5)
-gn["lat"], gn["lon"] = gn["lat_original"].where(en_peru), gn["lon_original"].where(en_peru)
-print("3.4 Marcados como faltantes -> avance físico:", int((gn["avance_fisico_original"] > 100).sum()),
-      "| avance de ejecución:", int((gn["avance_ejecucion_original"] > 100).sum()),
-      "| beneficiarios:", int((gn["beneficiarios_original"] > 35_000_000).sum()),
+inv["avance_fisico"] = inv["avance_fisico_original"].where(inv["avance_fisico_original"] <= 100)
+inv["avance_ejecucion"] = inv["avance_ejecucion_original"].where(inv["avance_ejecucion_original"] <= 100)
+inv["beneficiarios"] = inv["beneficiarios_original"].where(inv["beneficiarios_original"] <= 35_000_000)
+en_peru = inv["lat_original"].between(-18.5, 0.1) & inv["lon_original"].between(-81.5, -68.5)
+inv["lat"], inv["lon"] = inv["lat_original"].where(en_peru), inv["lon_original"].where(en_peru)
+print("3.4 Marcados como faltantes -> avance físico:", int((inv["avance_fisico_original"] > 100).sum()),
+      "| avance de ejecución:", int((inv["avance_ejecucion_original"] > 100).sum()),
+      "| beneficiarios:", int((inv["beneficiarios_original"] > 35_000_000).sum()),
       "| coordenadas:", int((~en_peru).sum()))
 
 # ============================================================
@@ -85,33 +86,49 @@ print("3.4 Marcados como faltantes -> avance físico:", int((gn["avance_fisico_o
 # ============================================================
 for col in ["SECTOR", "ENTIDAD", "NOMBRE_UEP", "NOMBRE_UF", "NOMBRE_UEI", "NOMBRE_OPMI", "DES_MODALIDAD", "TIPO_INVERSION",
             "SITUACION", "DEPARTAMENTO", "PROVINCIA", "DISTRITO", "FUNCION", "ALTERNATIVA"]:
-    gn[col] = texto(gn[col])
-gn["nombre"] = texto(gn["NOMBRE_INVERSION"]).str.replace(" ¿ ", " – ", regex=False)
-gn["DES_MODALIDAD"] = gn["DES_MODALIDAD"].str.replace("PUBLICA PRIVADA", "PÚBLICA PRIVADA", regex=False)
-gn["NOMBRE_UEP"] = gn["NOMBRE_UEP"].replace("", "Sin unidad ejecutora registrada")
+    inv[col] = texto(inv[col])
+inv["nombre"] = texto(inv["NOMBRE_INVERSION"]).str.replace(" ¿ ", " – ", regex=False)
+inv["DES_MODALIDAD"] = inv["DES_MODALIDAD"].str.replace("PUBLICA PRIVADA", "PÚBLICA PRIVADA", regex=False)
+inv["NOMBRE_UEP"] = inv["NOMBRE_UEP"].replace("", "Sin unidad ejecutora registrada")
+
+# ============================================================
+# PASO 3.5b: Niveles de la cartera y tipo de inversión
+#   nivel:   "Gobierno nacional" o "Gobierno regional" (antes: "GN" o "GR")
+#   cartera: el segundo nivel del árbol. En el nacional es el sector (p. ej., SALUD); en el regional, el gobierno regional
+#            (p. ej., GOBIERNO REGIONAL JUNIN), porque en el MEF todos los regionales tienen el mismo sector: GOBIERNOS REGIONALES.
+#   pliego:  la entidad (ENTIDAD), que es el pliego presupuestal. En el regional coincide con el gobierno regional.
+#   tipo_grupo: el tipo de inversión en 4 grupos. Antes: 12 tipos del MEF | Después: 4 grupos
+# ============================================================
+inv["nivel"] = inv["NIVEL"].map({"GN": "Gobierno nacional", "GR": "Gobierno regional"})
+inv["cartera"] = inv["SECTOR"].where(inv["NIVEL"] == "GN", inv["ENTIDAD"])
+TIPO_GRUPO = {"PROYECTO DE INVERSION": "Proyecto de inversión", "PIP MAYOR (SNIP)": "Proyecto de inversión",
+              "PIP MENOR (SNIP)": "Proyecto de inversión", "INVERSIONES IOARR": "IOARR",
+              "INTERVENCIONES IRI": "IRI (Reconstrucción con Cambios)"}
+inv["tipo_grupo"] = inv["TIPO_INVERSION"].map(TIPO_GRUPO).fillna("Programas y otros")
+print("3.5b Tipo de inversión por nivel:", inv.groupby(["nivel", "tipo_grupo"]).size().to_dict())
 
 # ============================================================
 # PASO 3.6: Unir la brecha (archivo nacional de brechas)
 #   Una inversión puede tener varias brechas: se guarda la primera y cuántas tiene en total
 # ============================================================
 brechas = pd.read_csv(CRUDO / "INVERSIONES_BRECHAS.csv", dtype=str, encoding="utf-8-sig", keep_default_na=False)
-brechas = brechas[brechas["CODIGO_UNICO"].isin(gn["CODIGO_UNICO"])]
+brechas = brechas[brechas["CODIGO_UNICO"].isin(inv["CODIGO_UNICO"])]
 primera = brechas.groupby("CODIGO_UNICO").agg(
     brecha=("DES_BRECHA", "first"), brecha_servicio=("DES_SERVICIO", "first"), brecha_unidad=("DES_UM", "first"),
     brecha_aporte=("CONTRIBUCION", "first"), n_brechas=("DES_BRECHA", "size")).reset_index()
 primera["brecha_aporte"] = pd.to_numeric(primera["brecha_aporte"], errors="coerce")
 for c in ["brecha", "brecha_servicio", "brecha_unidad"]:
     primera[c] = texto(primera[c])
-gn = gn.merge(primera, on="CODIGO_UNICO", how="left")
-print("3.6 Con brecha:", int(gn["brecha"].notna().sum()), "de", len(gn))
+inv = inv.merge(primera, on="CODIGO_UNICO", how="left")
+print("3.6 Con brecha:", int(inv["brecha"].notna().sum()), "de", len(inv))
 
 # PASO 3.6b: Guardar TODAS las brechas (no solo la primera), una fila por inversión y brecha, para el Proceso 7
-#   Antes: 505 452 filas de todo el país | Después: solo las del gobierno nacional, con nombres claros
+#   Antes: 505 452 filas de todo el país | Después: solo las del gobierno nacional y los regionales, con nombres claros
 todas = pd.DataFrame({"cui": brechas["CODIGO_UNICO"], "servicio": texto(brechas["DES_SERVICIO"]),
                       "indicador": texto(brechas["DES_BRECHA"]), "unidad_medida": texto(brechas["DES_UM"]),
                       "espacio": texto(brechas["ESPACIO_GEOGRAFICO"]), "anio": brechas["ANIO"],
                       "aporte": pd.to_numeric(brechas["CONTRIBUCION"], errors="coerce")})
-todas.to_parquet(PROCESADO / "brechas_gobierno_nacional.parquet", index=False)
+todas.to_parquet(PROCESADO / "brechas.parquet", index=False)
 print("3.6b Todas las brechas:", todas.shape, "| inversiones:", todas["cui"].nunique())
 
 # ============================================================
@@ -128,7 +145,7 @@ cols_dev = [f"DEV_{m}_AÑO_VIG" for m in MESES_DEV]
 cols_mes = [f"MONTO_PROGRAMADO_{i}" for i in range(1, 11)] + [f"MONTO_ACTUALIZADO_{i}" for i in range(1, 11)] + cols_dev
 cols12 = ["CODIGO_UNICO", "FECHA_ULT_ACT_F12B", "ULT_ESTADO_SITUACIONAL", "ULT_PROBLEMA", "ACC_PROBLEMA"]
 f12b = pd.read_csv(CRUDO / "FORMATO_12B.csv", dtype=str, encoding="utf-8-sig", keep_default_na=False, usecols=cols12 + cols_mes)
-f12b = f12b[f12b["CODIGO_UNICO"].isin(gn["CODIGO_UNICO"])]
+f12b = f12b[f12b["CODIGO_UNICO"].isin(inv["CODIGO_UNICO"])]
 # sum(axis=1): suma los 10 meses de cada fila. Antes: 10 columnas por concepto | Después: 1 total de enero a octubre
 mensual = {nombre: f12b[[c for c in cols_mes if c.startswith(prefijo)]].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=1)
            for nombre, prefijo in [("programado_ene_oct", "MONTO_PROGRAMADO_"), ("reprogramado_ene_oct", "MONTO_ACTUALIZADO_")]}
@@ -156,20 +173,21 @@ f12b = pd.DataFrame({"CODIGO_UNICO": f12b["CODIGO_UNICO"],
                      "situacion_12b": sin_fecha(f12b["ULT_ESTADO_SITUACIONAL"]),
                      "problema_12b": sin_fecha(f12b["ULT_PROBLEMA"]),
                      "acciones_12b": sin_fecha(f12b["ACC_PROBLEMA"]), **mensual})
-gn = gn.merge(f12b, on="CODIGO_UNICO", how="left")
-print("3.7 Con último 12-B:", int(gn["fecha_12b"].notna().sum()), "de", len(gn))
+inv = inv.merge(f12b, on="CODIGO_UNICO", how="left")
+print("3.7 Con último 12-B:", int(inv["fecha_12b"].notna().sum()), "de", len(inv))
 
 # ============================================================
 # PASO 3.8: Guardar solo las columnas que usa la app
 # ============================================================
 columnas = {
-    "id": "id", "CODIGO_UNICO": "cui", "CODIGO_SNIP": "snip", "SECTOR": "sector", "ENTIDAD": "entidad", "NOMBRE_UEP": "unidad",
+    "id": "id", "CODIGO_UNICO": "cui", "CODIGO_SNIP": "snip", "nivel": "nivel", "cartera": "cartera", "SECTOR": "sector",
+    "ENTIDAD": "entidad", "NOMBRE_UEP": "unidad", "tipo_grupo": "tipo_grupo",
     "nombre": "nombre", "TIPO_INVERSION": "tipo", "SITUACION": "situacion", "MARCO": "marco", "DES_MODALIDAD": "modalidad",
     "FUNCION": "funcion", "DEPARTAMENTO": "departamento", "PROVINCIA": "provincia", "DISTRITO": "distrito",
     "NOMBRE_UF": "uf", "NOMBRE_UEI": "uei", "NOMBRE_OPMI": "opmi", "ALTERNATIVA": "alternativa",
     "EXPEDIENTE_TECNICO": "expediente_tecnico", "INFORME_CIERRE": "informe_cierre", "REGISTRADO_PMI": "en_pmi", "TIENE_F12B": "tiene_12b",
 }
-salida = gn.rename(columns=columnas)[list(columnas.values()) + [
+salida = inv.rename(columns=columnas)[list(columnas.values()) + [
     "viable", "costo", "ctrl", "dev_hasta_2025", "dev_2026", "dev_acumulado", "pim_2026", "saldo",
     "avance_fisico", "avance_fisico_original", "beneficiarios", "beneficiarios_original", "lat", "lon",
     "fecha_viable", "inicio", "fin", "brecha", "brecha_servicio", "brecha_unidad", "brecha_aporte", "n_brechas",
@@ -179,5 +197,5 @@ salida = gn.rename(columns=columnas)[list(columnas.values()) + [
     "programado_ene_oct", "reprogramado_ene_oct", "devengado_ene_oct",
     # avance declarado por la entidad y gasto mensual de 2026 (avance frente a gasto, Proceso 7)
     "avance_ejecucion", "avance_ejecucion_original", "fecha_declaracion", *[f"dev_2026_{i:02d}" for i in range(1, 12)]]]
-salida.to_parquet(PROCESADO / "gobierno_nacional.parquet", index=False)
-print("3.8 Guardado:", salida.shape, "->", PROCESADO / "gobierno_nacional.parquet")
+salida.to_parquet(PROCESADO / "inversiones.parquet", index=False)
+print("3.8 Guardado:", salida.shape, "->", PROCESADO / "inversiones.parquet")

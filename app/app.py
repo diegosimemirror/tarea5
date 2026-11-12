@@ -2,8 +2,8 @@
 # PROCESO 5: Mostrar la cartera de inversiones en lenguaje simple (aplicación web)
 # Insumo:    data/procesado/cinco_preguntas.parquet (resultado del Proceso 4)
 # Resultado: una página web con tres pasos:
-#              1) elegir la cartera completa o un ministerio, 2) ver su árbol y sus proyectos, 3) abrir la ficha de cinco preguntas
-#            (en la cartera completa solo se ve la estructura de desglose por ministerio o entidad)
+#              1) elegir qué ver: nivel de gobierno, sector o gobierno regional, pliego, unidad ejecutora, tipo y estado
+#                 (cada lista empieza con «Todos»), 2) ver su árbol, sus indicadores y sus proyectos, 3) abrir la ficha de cada uno
 # Uso:       uv run --with streamlit --with pandas --with pyarrow streamlit run app/app.py
 # ============================================================
 
@@ -17,6 +17,7 @@ import html
 import unicodedata   # unicodedata: quitar las tildes, para que «Sanchez» encuentre «Sánchez» al buscar
 import pandas as pd
 import pydeck as pdk   # pydeck: mapas interactivos; viene instalado con Streamlit
+from resumen_cartera import resumen   # resumen(): indicadores de cartera de cualquier grupo de proyectos (app/resumen_cartera.py)
 import streamlit as st
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -55,12 +56,11 @@ def cargar(marca):
         con_ia = tabla["titulo_ia"].fillna("") != ""
         tabla.loc[con_ia, "que_es"] = tabla.loc[con_ia, "titulo_ia"]
         tabla.loc[con_ia, "redactado_por_ia"] = True
-    # Indicadores de cartera del Proceso 7: las frases para la ficha y la clasificación de problemas de cada proyecto
-    #   Antes: 1 fila por proyecto con las cinco preguntas | Después: la misma fila, con 8 columnas más
-    frases = pd.read_parquet(PROCESADO / "indicadores_proyecto.parquet")[
-        ["id", "brechas_lista", "frase_brecha", "frase_costo", "frase_dinero", "frase_problemas", "frase_programacion",
-         "clase_problema", "temas", "pct_gastado_vida", "pct_gastado_2026", "frase_indice", "frase_alerta", "alerta_gasto_avance",
-         "meses_atraso"]]
+    # Indicadores por proyecto del Proceso 7: las frases para la ficha y las columnas con las que se calculan las tarjetas
+    #   de "¿Cómo está la cartera?" para cualquier selección (resumen_cartera.resumen)
+    #   Antes: 1 fila por proyecto con las cinco preguntas | Después: la misma fila, con las columnas del Proceso 7 que faltaban
+    frases = pd.read_parquet(PROCESADO / "indicadores_proyecto.parquet")
+    frases = frases[["id"] + [c for c in frases.columns if c not in tabla.columns]]
     tabla = tabla.merge(frases, on="id", how="left")
     # Ejecución presupuestal en % (las mismas dos medidas de la ficha), para la lista y el mapa
     #   Antes: proporciones (0.153) | Después: porcentajes (15.3); sin presupuesto 2026 queda vacío
@@ -73,46 +73,36 @@ def cargar(marca):
     return tabla
 
 @st.cache_data
-def cargar_indicadores(marca):
-    """Una fila por ministerio o entidad, más la fila 'CARTERA COMPLETA' (Proceso 7)."""
-    return pd.read_parquet(PROCESADO / "indicadores_cartera.parquet").set_index("sector")
-
-@st.cache_data
 def cargar_brechas(marca):
     """Todas las brechas de cada proyecto (Proceso 3): una fila por proyecto y brecha, con su aporte y su unidad.
     Antes: 'PORCENTAJE DE …' en mayúsculas | Después: 'Porcentaje de …' (solo la primera letra en mayúscula)."""
-    b = pd.read_parquet(PROCESADO / "brechas_gobierno_nacional.parquet")
+    b = pd.read_parquet(PROCESADO / "brechas.parquet")
     b["indicador"] = b["indicador"].str.capitalize()
     b["unidad_medida"] = b["unidad_medida"].str.lower()
     return b
 
 marca = marca_datos()
 inversiones = cargar(marca)
-indicadores = cargar_indicadores(marca)
 brechas_todas = cargar_brechas(marca)
 DIAS_AL_CIERRE = (pd.Timestamp("2026-12-31") - pd.Timestamp("2026-11-10")).days   # misma fecha de referencia que los Procesos 4 y 7
 
-# Nombres que entiende cualquiera, en lugar de los nombres de sector del MEF
+# Nombres de sector que entiende cualquiera (el pliego, p. ej. «Ministerio de Salud», va en su propia lista)
 NOMBRES = {
-    "TRANSPORTES Y COMUNICACIONES": "Ministerio de Transportes y Comunicaciones",
-    "VIVIENDA, CONSTRUCCION Y SANEAMIENTO": "Ministerio de Vivienda, Construcción y Saneamiento",
-    "EDUCACION": "Ministerio de Educación", "SALUD": "Ministerio de Salud",
-    "ECONOMIA Y FINANZAS": "Ministerio de Economía y Finanzas", "FONAFE": "FONAFE (empresas del Estado)",
-    "AGRICULTURA Y RIEGO": "Ministerio de Desarrollo Agrario y Riego",
-    "PRESIDENCIA DEL CONSEJO DE MINISTROS": "Presidencia del Consejo de Ministros",
-    "INTERIOR": "Ministerio del Interior", "ENERGIA Y MINAS": "Ministerio de Energía y Minas", "ESSALUD": "EsSalud",
-    "JUSTICIA": "Ministerio de Justicia y Derechos Humanos", "PRODUCCION": "Ministerio de la Producción",
-    "CULTURA": "Ministerio de Cultura", "PODER JUDICIAL": "Poder Judicial",
-    "COMERCIO EXTERIOR Y TURISMO": "Ministerio de Comercio Exterior y Turismo", "AMBIENTAL": "Ministerio del Ambiente",
-    "DEFENSA": "Ministerio de Defensa", "MINISTERIO PUBLICO": "Ministerio Público",
-    "RELACIONES EXTERIORES": "Ministerio de Relaciones Exteriores", "CONTRALORIA GENERAL": "Contraloría General de la República",
-    "UNIVERSIDADES": "Universidades públicas", "REGISTRO NACIONAL DE IDENTIFICACION Y ESTADO CIVIL": "RENIEC",
-    "DESARROLLO E INCLUSION SOCIAL": "Ministerio de Desarrollo e Inclusión Social",
-    "OFICINA NACIONAL DE PROCESOS ELECTORALES-ONPE": "ONPE", "TRABAJO Y PROMOCION DEL EMPLEO": "Ministerio de Trabajo y Promoción del Empleo",
-    "MUJER Y POBLACIONES VULNERABLES": "Ministerio de la Mujer y Poblaciones Vulnerables",
-    "CONSEJO NACIONAL DE LA MAGISTRATURA": "Junta Nacional de Justicia", "DEFENSORIA DEL PUEBLO": "Defensoría del Pueblo",
-    "TRIBUNAL CONSTITUCIONAL": "Tribunal Constitucional", "CONGRESO DE LA REPUBLICA": "Congreso de la República",
-    "FUERO MILITAR POLICIAL": "Fuero Militar Policial", "JURADO NACIONAL DE ELECCIONES-JNE": "Jurado Nacional de Elecciones",
+    "TRANSPORTES Y COMUNICACIONES": "Transportes y Comunicaciones", "VIVIENDA, CONSTRUCCION Y SANEAMIENTO": "Vivienda, Construcción y Saneamiento",
+    "EDUCACION": "Educación", "SALUD": "Salud", "ECONOMIA Y FINANZAS": "Economía y Finanzas", "FONAFE": "FONAFE (empresas del Estado)",
+    "AGRICULTURA Y RIEGO": "Desarrollo Agrario y Riego", "PRESIDENCIA DEL CONSEJO DE MINISTROS": "Presidencia del Consejo de Ministros",
+    "INTERIOR": "Interior", "ENERGIA Y MINAS": "Energía y Minas", "ESSALUD": "EsSalud", "JUSTICIA": "Justicia y Derechos Humanos",
+    "PRODUCCION": "Producción", "CULTURA": "Cultura", "PODER JUDICIAL": "Poder Judicial",
+    "COMERCIO EXTERIOR Y TURISMO": "Comercio Exterior y Turismo", "AMBIENTAL": "Ambiente", "DEFENSA": "Defensa",
+    "MINISTERIO PUBLICO": "Ministerio Público", "RELACIONES EXTERIORES": "Relaciones Exteriores",
+    "CONTRALORIA GENERAL": "Contraloría General de la República", "UNIVERSIDADES": "Universidades públicas",
+    "REGISTRO NACIONAL DE IDENTIFICACION Y ESTADO CIVIL": "RENIEC", "DESARROLLO E INCLUSION SOCIAL": "Desarrollo e Inclusión Social",
+    "OFICINA NACIONAL DE PROCESOS ELECTORALES-ONPE": "ONPE", "TRABAJO Y PROMOCION DEL EMPLEO": "Trabajo y Promoción del Empleo",
+    "MUJER Y POBLACIONES VULNERABLES": "Mujer y Poblaciones Vulnerables", "CONSEJO NACIONAL DE LA MAGISTRATURA": "Junta Nacional de Justicia",
+    "DEFENSORIA DEL PUEBLO": "Defensoría del Pueblo", "TRIBUNAL CONSTITUCIONAL": "Tribunal Constitucional",
+    "CONGRESO DE LA REPUBLICA": "Congreso de la República", "FUERO MILITAR POLICIAL": "Fuero Militar Policial",
+    "JURADO NACIONAL DE ELECCIONES-JNE": "Jurado Nacional de Elecciones",
+    "MANCOMUNIDAD REGIONAL DE LOS ANDES": "Mancomunidad Regional de los Andes",
 }
 
 # Cada estado: color, símbolo y orden. El símbolo y la palabra acompañan siempre al color.
@@ -135,7 +125,10 @@ st.markdown("""
 .edt-hijos {display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px; padding-top:14px;
             border-top:1.5px solid rgba(128,128,128,0.6); margin-bottom:0.5rem;}
 .edt-caja {padding:8px 10px; border:1px solid rgba(128,128,128,0.55); border-radius:8px; font-size:0.92rem;}
-.edt-raiz b, .edt-caja b {display:block;}
+.edt-raiz b, .edt-caja b, .edt-sub b {display:block;}
+.edt-sub {margin:1rem 0 0 0; padding:6px 12px; border-left:4px solid #103f91; background:rgba(16,63,145,0.06); border-radius:4px;}
+.edt-sub span {opacity:0.75;}
+.ruta {font-size:0.95rem; opacity:0.8; margin:-0.6rem 0 0.6rem 0;}
 .edt-raiz span, .edt-caja span {opacity:0.75;}
 /* Tarjetas de indicadores: una pregunta, una cifra y una frase */
 div[data-testid="stMarkdownContainer"] p.cifra {font-size:2rem; font-weight:700; line-height:1.15; margin:0.15rem 0 0.1rem 0;}
@@ -196,6 +189,9 @@ def pie_de_pagina():
             "- **Por cerrar:** está prácticamente terminado (95 % o más) y falta el cierre formal.\n"
             "- **Sin presupuesto este año:** está aprobado, no ha empezado y no tiene presupuesto en 2026.\n"
             "- **En marcha:** ninguna de las anteriores.\n\n"
+            "**Tipo de inversión:** proyecto de inversión (incluye los proyectos del antiguo SNIP), IOARR (optimización, "
+            "ampliación marginal, reposición y rehabilitación), IRI (intervenciones de la Reconstrucción con Cambios) y "
+            "programas y otros.\n\n"
             "El avance es el que declaró la entidad en el último año (todos los componentes). Si no lo declaró, se usa el "
             "porcentaje gastado del costo. Reglas de ejemplo, por validar.\n\n"
             "**Indicadores de la cartera**\n"
@@ -232,10 +228,11 @@ TEMA_CORTO = {"Presupuesto o financiamiento": "presupuesto", "Liquidación o cie
               "Observaciones de control (Contraloría)": "Contraloría"}
 n_ = lambda x: f"{int(x):,}"   # número entero con separador de miles
 
-def tablero(clave, cartera):
-    """PASO 5.2a: los indicadores de cartera del Proceso 7 en seis tarjetas, con el mismo estilo de pregunta y respuesta.
-    Insumo: la fila de indicadores_cartera del ministerio elegido (o de la cartera completa) | Resultado: tarjetas y detalles."""
-    r = indicadores.loc[clave]
+def tablero(cartera):
+    """PASO 5.2a: los indicadores de cartera del Proceso 7 en cinco tarjetas, con el mismo estilo de pregunta y respuesta.
+    Insumo: los proyectos de la selección | Resultado: tarjetas y detalles.
+    resumen() los calcula en el momento, así que sirven para cualquier combinación de listas (o para un portafolio)."""
+    r = resumen(cartera)
     st.subheader("¿Cómo está la cartera?")
     # Cinco tarjetas: tres arriba (presupuesto, costos, financiamiento) y dos abajo (problemas, atraso)
     fila1, fila2 = st.columns(3), st.columns(2)
@@ -340,78 +337,107 @@ def tablero(clave, cartera):
             st.write("Ningún proyecto de esta cartera tiene brechas registradas.")
 
 # ============================================================
-# PASO 5.2: Paso 1 de la página — elegir la cartera completa o un ministerio
+# PASO 5.2: Elegir qué parte del portafolio ver. Seis listas desplegables; cada una empieza con «Todos» o «Todas»:
+#   nivel de gobierno → sector o gobierno regional → pliego → unidad ejecutora, más el tipo de inversión y el estado.
+#   Cada lista ofrece solo las opciones de lo elegido arriba, con su número de proyectos entre paréntesis.
 # ============================================================
 st.title("Cartera de inversiones del Estado")
-st.caption(f"Ministerios y entidades del gobierno nacional · datos del Ministerio de Economía y Finanzas (MEF) al {FECHA_DATOS}")
+st.caption(f"Gobierno nacional y gobiernos regionales · datos del Ministerio de Economía y Finanzas (MEF) al {FECHA_DATOS}")
 
-TODO = "CARTERA COMPLETA"   # opción especial: todos los ministerios y entidades juntos
-conteo = inversiones.groupby("sector").size().sort_values(ascending=False)
-opciones = [TODO] + list(conteo.index)
-# Elección inicial (solo en la primera carga): la cartera completa; pero con un enlace a una ficha (?ficha=CUI),
-#   el ministerio de ese proyecto, para que la ficha se muestre. Después, el selector conserva lo que elija la persona.
-if "cartera" not in st.session_state:
-    st.session_state["cartera"] = TODO
-    pedido_inicial = st.query_params.get("ficha")
-    if pedido_inicial:
-        hallado = inversiones.loc[inversiones["id"] == pedido_inicial, "sector"]
-        if len(hallado) and hallado.iloc[0] in opciones:
-            st.session_state["cartera"] = hallado.iloc[0]
-def reiniciar_filtros():
-    """Al cambiar de ministerio, los estados elegidos vuelven a 'Todos los estados' (no se arrastran del ministerio anterior)."""
-    for clave in ("estado_ministerio", "estado_unidad"):
-        st.session_state.pop(clave, None)
+# Nombres legibles: el MEF escribe todo en mayúsculas y sin tildes («GOBIERNO REGIONAL JUNIN»)
+MINUSCULAS = {"De", "Del", "La", "Las", "Los", "Y", "E", "En", "Para", "Con", "A", "Al", "El"}
+REGIONES = {"JUNIN": "Junín", "SAN MARTIN": "San Martín", "APURIMAC": "Apurímac", "HUANUCO": "Huánuco", "ANCASH": "Áncash"}
+ESPECIALES = {"GOBIERNO REGIONAL CALLAO": "Gobierno Regional del Callao"}
 
-sector = st.selectbox("¿Qué cartera quieres ver?", opciones, key="cartera", on_change=reiniciar_filtros,
-                      format_func=lambda s: f"Cartera completa — {len(inversiones):,} proyectos" if s == TODO
-                      else f"{NOMBRES.get(s, s.title())} — {conteo[s]:,} proyectos")
-cartera = inversiones if sector == TODO else inversiones[inversiones["sector"] == sector]
-nombre_sector = NOMBRES.get(sector, sector.title())
+def titulo(texto):
+    """'INSTITUTO NACIONAL DE SALUD' -> 'Instituto Nacional de Salud' (las palabras cortas en minúscula, salvo la primera)."""
+    palabras = str(texto).title().split()
+    return " ".join(p if i == 0 or p not in MINUSCULAS else p.lower() for i, p in enumerate(palabras))
 
-TODOS = "Todos los estados"
+def nombre_entidad(valor):
+    """Nombre para mostrar de un sector, un gobierno regional o un pliego.
+    Antes: 'SALUD', 'GOBIERNO REGIONAL JUNIN' | Después: 'Salud', 'Gobierno Regional de Junín'."""
+    if valor in NOMBRES:
+        return NOMBRES[valor]
+    if valor in ESPECIALES:
+        return ESPECIALES[valor]
+    for prefijo, nuevo in (("GOBIERNO REGIONAL DEL DEPARTAMENTO DE ", "Gobierno Regional del Departamento de "),
+                           ("GOBIERNO REGIONAL ", "Gobierno Regional de ")):
+        if str(valor).startswith(prefijo):
+            region = valor[len(prefijo):]
+            return nuevo + REGIONES.get(region, titulo(region))
+    return titulo(valor)
+
+TODO = "__todo__"   # valor interno de la opción «Todos» o «Todas» de cada lista
 ORDEN_ESTADOS = sorted(ESTADOS, key=lambda e: ESTADOS[e][2])
+NIVELES = {"Gobierno nacional": "Gobierno nacional", "Gobierno regional": "Gobiernos regionales"}
+TIPOS = ["Proyecto de inversión", "IOARR", "IRI (Reconstrucción con Cambios)", "Programas y otros"]
+FILTROS = ["f_nivel", "f_cartera", "f_pliego", "f_unidad", "f_tipo", "f_estado"]
+# Al cambiar una lista, las que dependen de ella vuelven a «Todos» (otro sector no tiene los mismos pliegos ni unidades)
+DEPENDE = {"f_nivel": ["f_cartera", "f_pliego", "f_unidad"], "f_cartera": ["f_pliego", "f_unidad"], "f_pliego": ["f_unidad"]}
 
-def elegir_estado(columna, tabla, clave):
-    """Lista de estados con su número de proyectos entre paréntesis; la primera opción es 'Todos los estados'.
-    Antes: la tabla completa | Después: solo las filas del estado elegido (o todas)."""
-    cuenta = tabla["estado"].value_counts()
-    elegido = columna.selectbox("Estado", [TODOS] + ORDEN_ESTADOS, key=clave,
-                                format_func=lambda e: f"{e} ({len(tabla) if e == TODOS else int(cuenta.get(e, 0)):,})")
-    return tabla if elegido == TODOS else tabla[tabla["estado"] == elegido]
+def reiniciar(clave):
+    for k in DEPENDE.get(clave, []):
+        st.session_state[k] = TODO
 
-# ============================================================
-# PASO 5.2b: NIVEL 1 — Cartera completa (sin cambios): proyectos, costo y atrasados; los indicadores; y la estructura de
-#            desglose: "Cartera total" arriba y cada ministerio o entidad debajo, con su número de proyectos y su costo.
-#   Antes: 12 731 filas (una por proyecto) | Después: 33 cajas (una por ministerio o entidad), de mayor a menor costo
-# ============================================================
-if sector == TODO:
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Proyectos", f"{len(cartera):,}")
-    c2.metric("Costo total", millones(cartera["costo"].sum()))
-    c3.metric("Atrasados", f"{(cartera['estado'] == 'Atrasado').sum():,}")
-    st.markdown("".join(chip(e, int((cartera["estado"] == e).sum())) for e in ORDEN_ESTADOS), unsafe_allow_html=True)
-    tablero(sector, cartera)
-    sectores = (inversiones.groupby("sector").agg(n=("id", "size"), costo=("costo", "sum"))
-                .sort_values("costo", ascending=False))
-    st.subheader("La cartera por ministerio o entidad")
-    cajas = "".join(f'<div class="edt-caja"><b>{html.escape(NOMBRES.get(s.Index, s.Index.title()))}</b>'
-                    f'<span>{plural(s.n, "proyecto")} · {millones(s.costo)}</span></div>' for s in sectores.itertuples())
-    st.markdown(f'<div class="edt-raiz"><b>Cartera total</b><span>{plural(len(inversiones), "proyecto")} · '
-                f'{millones(inversiones["costo"].sum())}</span></div><div class="edt-linea"></div>'
-                f'<div class="edt-hijos">{cajas}</div>', unsafe_allow_html=True)
-    st.caption("Ordenados de mayor a menor costo. Para ver los proyectos, elige un ministerio o entidad arriba.")
+# Primera carga: todo en «Todos». Con un enlace a una ficha (?ficha=CUI), el nivel y la cartera de ese proyecto.
+if "f_nivel" not in st.session_state:
+    for k in FILTROS:
+        st.session_state[k] = TODO
+    pedido_inicial = st.query_params.get("ficha")
+    hallado = inversiones[inversiones["id"] == pedido_inicial] if pedido_inicial else inversiones.iloc[0:0]
+    if len(hallado):
+        st.session_state["f_nivel"], st.session_state["f_cartera"] = hallado.iloc[0]["nivel"], hallado.iloc[0]["cartera"]
+
+def lista(columna, etiqueta, tabla, campo, clave, todos, nombre=str, orden=None):
+    """Una lista desplegable: primero «Todos», luego cada opción con su número de proyectos.
+    Antes: la tabla | Después: (la opción elegida, solo las filas de esa opción; o todas, si se eligió «Todos»)."""
+    cuenta = tabla[campo].value_counts()
+    opciones = [TODO] + [v for v in (orden or list(cuenta.index)) if v in cuenta.index]
+    if st.session_state.get(clave) not in opciones:      # lo elegido antes ya no está en esta selección
+        st.session_state[clave] = TODO
+    elegido = columna.selectbox(etiqueta, opciones, key=clave, on_change=reiniciar, args=(clave,),
+                                format_func=lambda v: f"{todos} ({len(tabla):,})" if v == TODO
+                                else f"{nombre(v)} ({int(cuenta[v]):,})")
+    return elegido, (tabla if elegido == TODO else tabla[tabla[campo] == elegido])
+
+s1, s2, s3 = st.columns(3)
+s4, s5, s6 = st.columns(3)
+nivel, sel = lista(s1, "Nivel de gobierno", inversiones, "nivel", "f_nivel", "Todos los niveles", NIVELES.get, list(NIVELES))
+etiqueta_cartera = {"Gobierno nacional": "Sector", "Gobierno regional": "Gobierno regional"}.get(nivel, "Sector o gobierno regional")
+cartera_elegida, sel = lista(s2, etiqueta_cartera, sel, "cartera", "f_cartera", "Todos", nombre_entidad)
+pliego, sel = lista(s3, "Pliego", sel, "entidad", "f_pliego", "Todos", nombre_entidad)
+unidad, sel = lista(s4, "Unidad ejecutora", sel, "unidad", "f_unidad", "Todas", titulo)
+tipo, sel = lista(s5, "Tipo de inversión", sel, "tipo_grupo", "f_tipo", "Todos", orden=TIPOS)
+antes_del_estado = sel
+estado, seleccion = lista(s6, "Estado", sel, "estado", "f_estado", "Todos", lambda e: f"{ESTADOS[e][1]} {e}", ORDEN_ESTADOS)
+
+# Ruta de lo elegido, de lo general a lo particular (en un gobierno regional, el pliego es el mismo gobierno regional)
+ruta = ["Portafolio total"]
+if nivel != TODO:
+    ruta.append(NIVELES[nivel])
+if cartera_elegida != TODO:
+    ruta.append(nombre_entidad(cartera_elegida))
+if pliego != TODO and pliego != cartera_elegida:
+    ruta.append(nombre_entidad(pliego))
+if unidad != TODO:
+    ruta.append(titulo(unidad))
+extras = [f for f, v in [(tipo, tipo), (f"Estado: {estado}", estado)] if v != TODO]
+st.subheader(ruta[-1])
+if len(ruta) > 1 or extras:      # con todo en «Todos», la ruta repetiría el título
+    st.markdown(f'<p class="ruta">{" › ".join(html.escape(p) for p in ruta)}'
+                + (f' · {html.escape(", ".join(extras))}' if extras else "") + "</p>", unsafe_allow_html=True)
+
+m1, m2, m3 = st.columns(3)
+m1.metric("Proyectos", f"{len(seleccion):,}")
+m2.metric("Costo total", millones(seleccion["costo"].sum()))
+m3.metric("Atrasados", f"{(seleccion['estado'] == 'Atrasado').sum():,}")
+st.markdown("".join(chip(e, int((antes_del_estado["estado"] == e).sum())) for e in ORDEN_ESTADOS
+                    if (antes_del_estado["estado"] == e).any()), unsafe_allow_html=True)
+if seleccion.empty:
+    st.info("No hay proyectos con esta combinación. Cambia alguna lista a «Todos».")
     pie_de_pagina()
-    st.stop()   # en la cartera completa la página termina aquí
-
-# ============================================================
-# PASO 5.3: NIVEL 2 — Ministerio o entidad: elegir un estado (o todos) y ver cuántos proyectos son y cuánto cuestan.
-#           Debajo, el árbol (ministerio -> sus 6 unidades con más proyectos) con el estado elegido. El mapa va al final (PASO 5.4c).
-# ============================================================
-st.subheader(nombre_sector)
-m1, m2, m3 = st.columns([1.6, 1, 1.2])
-cartera_estado = elegir_estado(m1, cartera, "estado_ministerio")
-m2.metric("Proyectos", f"{len(cartera_estado):,}")
-m3.metric("Costo total", millones(cartera_estado["costo"].sum()))
+    st.stop()
 
 def etiqueta(texto, ancho=26):
     return "\\n".join(textwrap.wrap(texto.replace('"', "'"), ancho))
@@ -420,56 +446,85 @@ def rgb(hexa, alfa=210):
     """'#d03b3b' -> [208, 59, 59, 210]: el formato de color que usa el mapa."""
     return [int(hexa[i:i + 2], 16) for i in (1, 3, 5)] + [alfa]
 
-# Árbol del ministerio con el estado elegido
-with st.expander("Árbol de la cartera", expanded=True):
-    # Árbol con el estado elegido. Antes: filas de proyectos | Después: una caja por unidad con su número de proyectos y su costo
-    unidades_estado = (cartera_estado.groupby("unidad")
-                       .agg(n=("id", "size"), atrasados=("estado", lambda s: int((s == "Atrasado").sum())), costo=("costo", "sum"))
-                       .sort_values("n", ascending=False))
-    # Tamaño homogéneo: todas las cajas miden lo mismo (fixedsize) y el árbol tiene SIEMPRE 7 espacios (6 unidades + "Otras").
-    # Si hay menos unidades, los espacios que sobran se dibujan invisibles a ambos lados. Así, al estirarse al ancho de la
-    # página, la escala es la misma con 7 unidades que con 2, y las cajas no se agrandan.
-    ESPACIOS, UNIDADES_VISIBLES = 7, 6
+# ============================================================
+# PASO 5.3: El árbol de la selección
+#   Con «Todos los niveles»: el portafolio total, sus dos niveles y, debajo de cada uno, sus sectores o gobiernos regionales.
+#   Con un nivel: sus sectores o gobiernos regionales. Con un sector o gobierno regional: sus pliegos (si tiene más de uno)
+#   o sus unidades ejecutoras. Antes: filas de proyectos | Después: una caja por grupo, con su número de proyectos y su costo
+# ============================================================
+def caja_raiz(nombre, tabla, clase="edt-raiz"):
+    return (f'<div class="{clase}"><b>{html.escape(nombre)}</b><span>{plural(len(tabla), "proyecto")} · '
+            f'{millones(tabla["costo"].sum())}</span></div>')
+
+def cajas(tabla, campo):
+    """Una caja por grupo, de mayor a menor costo."""
+    grupos = tabla.groupby(campo).agg(n=("id", "size"), costo=("costo", "sum")).sort_values("costo", ascending=False)
+    return "".join(f'<div class="edt-caja"><b>{html.escape(nombre_entidad(g.Index))}</b>'
+                   f'<span>{plural(g.n, "proyecto")} · {millones(g.costo)}</span></div>' for g in grupos.itertuples())
+
+def arbol(tabla, campo, nombre_raiz):
+    """Árbol dibujado con graphviz: la selección arriba y, debajo, sus 6 pliegos o unidades con más proyectos.
+    En rojo, los que tienen al menos un proyecto atrasado; el resto va en una caja «Otros»."""
+    grupos = (tabla.groupby(campo)
+              .agg(n=("id", "size"), atrasados=("estado", lambda s: int((s == "Atrasado").sum())), costo=("costo", "sum"))
+              .sort_values("n", ascending=False))
+    palabra = "pliegos" if campo == "entidad" else "unidades"
+    # Tamaño homogéneo: todas las cajas miden lo mismo (fixedsize) y el árbol tiene SIEMPRE 7 espacios (6 grupos + "Otros").
+    # Si hay menos grupos, los espacios que sobran se dibujan invisibles a ambos lados. Así, al estirarse al ancho de la
+    # página, la escala es la misma con 7 grupos que con 2, y las cajas no se agrandan.
+    ESPACIOS, VISIBLES = 7, 6
     # Letra grande (16) porque el árbol se reduce al estirarse a 7 espacios; nombre en hasta 3 líneas, y número y costo aparte
     CAJA = 'shape=box, fixedsize=true, width=1.75, height=1.4, fontname="Helvetica", fontsize=16'
     etiqueta_caja = lambda t: "\\n".join(textwrap.wrap(t.replace('"', "'"), 15, max_lines=3, placeholder="…"))
-    nodos = [f'raiz [label="{etiqueta(nombre_sector, 30)}\\n{plural(len(cartera_estado), "proyecto")}\\n{millones(cartera_estado["costo"].sum())}", '
+    nodos = [f'raiz [label="{etiqueta(nombre_raiz, 30)}\\n{plural(len(tabla), "proyecto")}\\n{millones(tabla["costo"].sum())}", '
              f'shape=box, fixedsize=true, width=3.4, height=1.25, style="rounded,filled", fillcolor="#e9eef8", color="#103f91", '
              f'fontname="Helvetica", fontsize=15];']
     hijos = []
     # itertuples() conserva los números enteros; iterrows() los convertía en decimales (715 -> "715.0")
-    for i, u in enumerate(unidades_estado.head(UNIDADES_VISIBLES).itertuples()):
-        borde = "#d03b3b" if u.atrasados else "#9aa0a6"
-        hijos.append((f"u{i}", f'label="{etiqueta_caja(u.Index.title())}\\n{plural(u.n, "proyecto")}\\n{millones(u.costo)}", '
+    for i, g in enumerate(grupos.head(VISIBLES).itertuples()):
+        borde = "#d03b3b" if g.atrasados else "#9aa0a6"
+        hijos.append((f"g{i}", f'label="{etiqueta_caja(nombre_entidad(g.Index))}\\n{plural(g.n, "proyecto")}\\n{millones(g.costo)}", '
                                f'{CAJA}, style="rounded", color="{borde}"'))
-    if len(unidades_estado) > UNIDADES_VISIBLES:
-        resto = unidades_estado.iloc[UNIDADES_VISIBLES:]
-        hijos.append(("otras", f'label="Otras {len(resto)}\\nunidades\\n{plural(resto["n"].sum(), "proyecto")}\\n{millones(resto["costo"].sum())}", '
+    if len(grupos) > VISIBLES:
+        resto = grupos.iloc[VISIBLES:]
+        hijos.append(("otros", f'label="Otros {len(resto)}\\n{palabra}\\n{plural(resto["n"].sum(), "proyecto")}\\n{millones(resto["costo"].sum())}", '
                                f'{CAJA}, style="rounded,dashed", color="#9aa0a6"'))
     sobran = ESPACIOS - len(hijos)
     vacios = [(f"vacio{i}", f'label="", {CAJA}, style=invis') for i in range(sobran)]
-    # Orden de izquierda a derecha: la mitad de los vacíos, las unidades reales y la otra mitad (así quedan centradas)
+    # Orden de izquierda a derecha: la mitad de los vacíos, los grupos reales y la otra mitad (así quedan centrados)
     for nombre, atributos in vacios[:sobran // 2] + hijos + vacios[sobran // 2:]:
         nodos.append(f"{nombre} [{atributos}];")
         nodos.append(f"raiz -> {nombre}" + (" [style=invis];" if nombre.startswith("vacio") else ";"))
     st.graphviz_chart("digraph { rankdir=TB; ordering=out; nodesep=0.15; edge [color=\"#9aa0a6\", arrowhead=none]; "
                       + " ".join(nodos) + " }", width="stretch")
-    st.caption("En rojo, las unidades con al menos un proyecto atrasado. Se muestran las 6 unidades con más proyectos; el resto va en «Otras unidades».")
+    st.caption(f"En rojo, los {palabra} con al menos un proyecto atrasado. Se muestran los 6 con más proyectos; "
+               f"el resto va en «Otros». Para ver uno, elígelo arriba en «{'Pliego' if campo == 'entidad' else 'Unidad ejecutora'}».")
 
-tablero(sector, cartera)
+with st.expander("Árbol de la cartera", expanded=True):
+    if nivel == TODO:
+        partes = caja_raiz("Portafolio total", seleccion) + '<div class="edt-linea"></div>'
+        for nv in [n for n in NIVELES if (seleccion["nivel"] == n).any()]:
+            sub = seleccion[seleccion["nivel"] == nv]
+            partes += caja_raiz(NIVELES[nv], sub, "edt-sub") + f'<div class="edt-hijos">{cajas(sub, "cartera")}</div>'
+        st.markdown(partes, unsafe_allow_html=True)
+        st.caption("Ordenados de mayor a menor costo. Para ver uno, elígelo arriba en «Sector o gobierno regional».")
+    elif cartera_elegida == TODO:
+        st.markdown(caja_raiz(NIVELES[nivel], seleccion) + '<div class="edt-linea"></div>'
+                    f'<div class="edt-hijos">{cajas(seleccion, "cartera")}</div>', unsafe_allow_html=True)
+        st.caption(f"Ordenados de mayor a menor costo. Para ver uno, elígelo arriba en «{etiqueta_cartera}».")
+    elif pliego == TODO and seleccion["entidad"].nunique() > 1:
+        arbol(seleccion, "entidad", ruta[-1])
+    elif unidad == TODO:
+        arbol(seleccion, "unidad", ruta[-1])
+    else:
+        st.caption("Elegiste una unidad ejecutora: sus proyectos están en la lista de abajo.")
+
+tablero(seleccion)
 
 # ============================================================
-# PASO 5.4: NIVEL 3 — Unidad ejecutora: elegir una unidad (o todas) y un estado (o todos); ver cuántos proyectos son y cuánto
-#           cuestan; buscar, filtrar y ordenar; y mostrar los proyectos en una lista (el nivel 4 es la ficha de cada uno)
+# PASO 5.4: Los proyectos de la selección: buscar, ordenar y mostrarlos en una lista (la ficha de cada uno es el nivel siguiente)
 # ============================================================
-st.subheader("Unidades ejecutoras y sus proyectos")
-unidades = cartera.groupby("unidad").size().sort_values(ascending=False)
-f1, f2, f3, f4 = st.columns([2, 1.5, 0.8, 1.6])
-lista_unidades = ["Todas las unidades"] + list(unidades.index)
-unidad = f1.selectbox("Unidad ejecutora", lista_unidades,
-                      format_func=lambda u: u if u == "Todas las unidades" else f"{u.title()} — {unidades[u]:,}")
-vista = cartera if unidad == "Todas las unidades" else cartera[cartera["unidad"] == unidad]
-vista = elegir_estado(f2, vista, "estado_unidad")
+st.subheader("Proyectos")
 # Órdenes posibles de la lista: (columnas, ¿de menor a mayor?) para sort_values()
 ORDENES = {"Estado: primero los que requieren atención": (["_orden", "costo"], [True, False]),
            "Costo: de mayor a menor": (["costo"], [False]), "Costo: de menor a mayor": (["costo"], [True]),
@@ -477,7 +532,7 @@ ORDENES = {"Estado: primero los que requieren atención": (["_orden", "costo"], 
            "Ejecución acumulada: de mayor a menor": (["ejec_acum"], [False]),
            "Ejecución 2026: de menor a mayor": (["ejec_2026"], [True]),
            "Atraso: de mayor a menor": (["meses_atraso"], [False]), "Nombre: de la A a la Z": (["que_es"], [True])}
-b1, b2, _ = st.columns([1, 1.2, 1.8])
+b1, b2, f3, f4 = st.columns([1.2, 1.4, 0.6, 1.6])
 busqueda = b1.text_input("Buscar", placeholder="Nombre, lugar, unidad o CUI")
 orden = b2.selectbox("Ordenar por", list(ORDENES))
 # Búsqueda palabra por palabra: deben aparecer todas, en cualquier orden, sin importar tildes ni mayúsculas
@@ -491,31 +546,31 @@ def coincide(tabla, palabras):
         marca &= tabla["_busqueda"].str.contains(p, regex=False)
     return marca
 
+vista = seleccion
 if busqueda.strip():
     palabras = [p for p in sin_tildes(busqueda).split() if p not in PALABRAS_VACIAS] or sin_tildes(busqueda).split()
     vista = vista[coincide(vista, palabras)]
     if vista.empty:
-        # Si no hay resultados, decir dónde sí está (otra unidad o estado, u otro ministerio) o que no es del gobierno nacional
+        # Si no hay resultados, decir dónde sí está (otra cartera, tipo o estado) o que no es del nacional ni del regional
         buscado = html.escape(busqueda.strip())
-        en_ministerio = coincide(cartera, palabras).sum()
-        en_otros = inversiones[coincide(inversiones, palabras)]["sector"].value_counts()
-        if en_ministerio:
-            st.info(f"«{buscado}» no aparece con esta unidad o estado, pero hay {en_ministerio:,} en esta cartera: "
-                    "elige «Todas las unidades» y «Todos los estados».")
-        elif len(en_otros):
-            st.info(f"«{buscado}» no está en esta cartera, pero sí en: "
-                    + ", ".join(f"{NOMBRES.get(s, s.title())} ({n:,})" for s, n in en_otros.head(3).items())
-                    + ". Elígela arriba, en «¿Qué cartera quieres ver?».")
+        en_otros = inversiones[coincide(inversiones, palabras)]["cartera"].value_counts()
+        if len(en_otros):
+            st.info(f"«{buscado}» no está en esta selección, pero sí en: "
+                    + ", ".join(f"{nombre_entidad(s)} ({n:,})" for s, n in en_otros.head(3).items())
+                    + ". Para verlos, elige «Todos» en las listas de arriba.")
         else:
-            st.info(f"No encontramos «{buscado}». Esta versión solo tiene los proyectos del gobierno nacional: "
-                    "si es una obra de un gobierno regional o municipal, todavía no está aquí.")
+            st.info(f"No encontramos «{buscado}». Esta versión tiene los proyectos del gobierno nacional y de los gobiernos "
+                    "regionales: si es una obra municipal, todavía no está aquí.")
 # sort_values(): reordena las filas según el orden elegido; los que no tienen dato (p. ej., sin atraso) van al final
 columnas_orden, ascendente = ORDENES[orden]
 vista = (vista.assign(_orden=vista["estado"].map(lambda e: ESTADOS[e][2]))
          .sort_values(columnas_orden, ascending=ascendente, na_position="last"))
-# Las cifras del nivel 3 van junto a los selectores, ya con todos los filtros aplicados
+# Las cifras de la lista van junto al buscador, ya con la búsqueda aplicada
 f3.metric("Proyectos", f"{len(vista):,}")
 f4.metric("Costo total", millones(vista["costo"].sum()))
+# La lista muestra hasta 2 000 filas, para que la página no se vuelva lenta; el mapa sí muestra todos los proyectos
+MAX_FILAS = 2000
+mostrar = vista.head(MAX_FILAS)
 
 # ============================================================
 # PASO 5.5: Paso 3 — la ficha de cinco preguntas (ventana emergente)
@@ -585,7 +640,8 @@ def ficha(fila):
     with st.expander("Para especialistas (términos de Invierte.pe)"):
         st.markdown(
             f"- **Nombre oficial:** {fila['nombre']}\n"
-            f"- **CUI:** {fila['id']} · **Unidad ejecutora:** {fila['unidad']}\n"
+            f"- **CUI:** {fila['id']} · **Nivel:** {fila['nivel']} · **Pliego:** {fila['entidad']}\n"
+            f"- **Unidad ejecutora:** {fila['unidad']} · **Tipo (MEF):** {fila['tipo']}\n"
             f"- **UEI:** {fila['uei'] or 'sin dato'} · **OPMI:** {fila['opmi'] or 'sin dato'}\n"
             f"- **PIM 2026:** {millones(fila['pim_2026'])} · **Devengado 2026:** {millones(fila['dev_2026'])}\n"
             f"- **Modalidad:** {fila['modalidad'] or 'sin dato'} · **Registrada en el PMI:** {fila['en_pmi']}\n"
@@ -612,27 +668,30 @@ def ficha(fila):
 # ============================================================
 # Las cifras van junto al nombre, para que se vean sin desplazarse; el lugar y la unidad, al final
 tabla = pd.DataFrame({
-    "Estado": vista["estado"].map(lambda e: f"{ESTADOS[e][1]} {e}"),     # el símbolo acompaña al nombre del estado
-    "Proyecto": vista["que_es"],
-    "Costo (S/)": vista["costo"].round(0),
+    "Estado": mostrar["estado"].map(lambda e: f"{ESTADOS[e][1]} {e}"),     # el símbolo acompaña al nombre del estado
+    "Proyecto": mostrar["que_es"],
+    "Costo (S/)": mostrar["costo"].round(0),
     # Las mismas dos medidas de "¿Cuánto se ha ejecutado?" en la ficha (el avance declarado queda para especialistas)
-    "Ejecución 2026": vista["ejec_2026"].clip(0, 100).round(0),            # vacío si no tiene presupuesto 2026
-    "Ejecución acumulada": vista["ejec_acum"].clip(0, 100).round(0),
-    "Atraso (meses)": vista["meses_atraso"].fillna(0).astype(int),   # 0 si no está atrasado (la tabla mostraría "None")
-    "Lugar": vista["lugar"],
+    "Ejecución 2026": mostrar["ejec_2026"].clip(0, 100).round(0),            # vacío si no tiene presupuesto 2026
+    "Ejecución acumulada": mostrar["ejec_acum"].clip(0, 100).round(0),
+    "Atraso (meses)": mostrar["meses_atraso"].fillna(0).astype(int),   # 0 si no está atrasado (la tabla mostraría "None")
+    "Lugar": mostrar["lugar"],
 })
-if unidad == "Todas las unidades":
-    tabla["Unidad ejecutora"] = vista["unidad"].str.title()
+if cartera_elegida == TODO:
+    tabla["Sector o gobierno regional"] = mostrar["cartera"].map(nombre_entidad)
+if unidad == TODO:
+    tabla["Unidad ejecutora"] = mostrar["unidad"].map(titulo)
 # Dos casillas al inicio de cada fila:
 #   "Ver ficha": al marcarla se abre la ficha de ese proyecto
 #   "Ubicar":    al marcarla, el proyecto se resalta en el mapa (al final de la página). Las marcas se guardan por proyecto,
 #                así que se mantienen aunque se abra una ficha o cambie el orden
 ubicar = set(st.session_state.get("ubicar_ids", []))
 tabla.insert(0, "Ficha", False)
-tabla.insert(1, "Mapa", vista["id"].isin(ubicar))
+tabla.insert(1, "Mapa", mostrar["id"].isin(ubicar))
 # La clave cambia con los filtros y después de abrir cada ficha: así la lista vuelve a mostrarse sin "Ver ficha" marcado
 version = st.session_state.get("version_lista", 0)
-clave_lista = f"lista_{version}_" + str(abs(hash((sector, unidad, len(vista), orden, busqueda, tuple(vista["id"].head(3))))))
+clave_lista = f"lista_{version}_" + str(abs(hash((nivel, cartera_elegida, pliego, unidad, tipo, estado, len(vista), orden, busqueda,
+                                                   tuple(mostrar["id"].head(3))))))
 editada = st.data_editor(
     tabla, hide_index=True, width="stretch", height=min(38 + 35 * len(tabla), 460), key=clave_lista,
     disabled=[c for c in tabla.columns if c not in ("Ficha", "Mapa")],   # solo se marcan las casillas; los datos no se editan
@@ -649,13 +708,14 @@ editada = st.data_editor(
                                                                help="Lo gastado en toda su vida frente a su costo", width=125),
         "Atraso (meses)": st.column_config.NumberColumn("Atraso (meses)", format="%d", width=95),
     })
-st.caption(plural(len(vista), "proyecto") + ("" if unidad == "Todas las unidades" else f" de {unidad.title()}")
+st.caption(plural(len(vista), "proyecto")
+           + (f" (se muestran los primeros {MAX_FILAS:,}: usa las listas o el buscador para acotar)" if len(vista) > MAX_FILAS else "")
            + ". Marca «Ver ficha» para abrir la ficha de un proyecto, o «Ubicar» para resaltarlo en el mapa (al final de la página).")
 
 # Actualizar las marcas de "Ubicar" de los proyectos que están en la lista (los demás conservan su marca)
 #   Antes: casillas en la tabla | Después: el conjunto de proyectos marcados, guardado entre clics
-visibles = set(vista["id"])
-marcados_mapa = set(vista.loc[editada.index[editada["Mapa"]], "id"])
+visibles = set(mostrar["id"])
+marcados_mapa = set(mostrar.loc[editada.index[editada["Mapa"]], "id"])
 st.session_state["ubicar_ids"] = sorted((ubicar - visibles) | marcados_mapa)
 
 # Abrir la ficha de la fila marcada. La tabla conserva el índice de 'vista', así que se busca la fila por ese índice.
@@ -663,7 +723,7 @@ marcadas = editada.index[editada["Ficha"]].tolist()
 abierta = False                      # solo se puede abrir una ficha (ventana) a la vez
 if marcadas:
     st.session_state["version_lista"] = version + 1     # la próxima vez la lista aparece sin la casilla marcada
-    ficha(vista.loc[marcadas[0]])
+    ficha(mostrar.loc[marcadas[0]])
     abierta = True
 
 # Enlace directo a una ficha: http://localhost:8501/?ficha=CUI (sirve para compartir un proyecto y para la prueba automática)

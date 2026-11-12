@@ -1,7 +1,7 @@
 # ============================================================
 # PRUEBA AUTOMÁTICA DE LA APP (sin abrir el navegador)
 # Insumo:    app/app.py
-# Resultado: en pantalla, si la página carga sin errores y si la ficha se abre al hacer clic
+# Resultado: en pantalla, si la página carga sin errores y si las listas, la ficha, la búsqueda y el mapa funcionan
 # Uso:       uv run --with streamlit --with pandas --with pyarrow python scripts/probar_app.py
 # ============================================================
 
@@ -9,20 +9,27 @@
 from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
-app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app" / "app.py"), default_timeout=120)
+APP = str(Path(__file__).resolve().parents[1] / "app" / "app.py")
+TODO = "__todo__"     # la opción «Todos» o «Todas» de cada lista
+# Listas desplegables, de arriba abajo: nivel, sector o gobierno regional, pliego, unidad ejecutora, tipo, estado y orden
+NIVEL, CARTERA, PLIEGO, UNIDAD, TIPO, ESTADO, ORDEN = range(7)
+
+app = AppTest.from_file(APP, default_timeout=180)
 app.run()
-cifras = lambda: sum(m.value.count('class="cifra"') for m in app.markdown)   # tarjetas de indicadores de cartera
-print("1. Carga inicial (debe ser la cartera completa) — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric],
-      "| indicadores:", cifras())
+cifras = lambda: sum(m.value.count('class="cifra"') for m in app.markdown)      # tarjetas de indicadores
+cajas = lambda: sum(m.value.count('class="edt-caja"') for m in app.markdown)    # cajas del árbol de la cartera
+metricas = lambda: [m.value for m in app.metric]
+lista = lambda: app.dataframe[-1].value                                         # la lista de proyectos (la última tabla)
+print("1. Carga inicial (portafolio total) — errores:", len(app.exception), "| métricas:", metricas(),
+      "| indicadores:", cifras(), "| cajas del árbol:", cajas(), "| filas de la lista:", len(lista()))
 
-# Pasar al MIDIS para revisar la lista de proyectos
-app.selectbox[0].select("DESARROLLO E INCLUSION SOCIAL").run()
-print("1b. MIDIS — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric])
+app.selectbox[NIVEL].select("Gobierno nacional").run()
+print("1b. Gobierno nacional — errores:", len(app.exception), "| métricas:", metricas(), "| cajas:", cajas())
 
-# La lista de proyectos (la última tabla de la página) y el selector "Ordenar por" (selector [4])
-lista = lambda: app.dataframe[-1].value
-print("2. Lista de proyectos — filas:", len(lista()), "| columnas:", list(lista().columns))
-app.selectbox[4].select("Costo: de mayor a menor").run()
+# Un sector del nacional (MIDIS): la lista, ordenarla y sus columnas
+app.selectbox[CARTERA].select("DESARROLLO E INCLUSION SOCIAL").run()
+print("2. MIDIS — errores:", len(app.exception), "| métricas:", metricas(), "| filas:", len(lista()), "| columnas:", list(lista().columns))
+app.selectbox[ORDEN].select("Costo: de mayor a menor").run()
 costos = lista()["Costo (S/)"]
 print("   Ordenada de mayor a menor costo:", bool(costos.is_monotonic_decreasing), "| primera fila:", lista().iloc[0]["Proyecto"][:60])
 
@@ -30,7 +37,7 @@ print("   Ordenada de mayor a menor costo:", bool(costos.is_monotonic_decreasing
 app.query_params["ficha"] = "2613205"
 app.run()
 preguntas = [p for p in ["¿Tiene financiamiento?", "¿Qué problemas reporta?", "¿Cuánto se ha ejecutado?"] if any(p in m.value for m in app.markdown)]
-print("3. Ficha por enlace (2613205) — errores:", len(app.exception), "| preguntas nuevas presentes:", preguntas)
+print("3. Ficha por enlace (2613205) — errores:", len(app.exception), "| preguntas presentes:", preguntas)
 del app.query_params["ficha"]
 
 # "Ubicar": un proyecto marcado debe aparecer resaltado en el mapa (se simula la marca guardada en la sesión)
@@ -41,53 +48,65 @@ print("3b. Ubicar en el mapa (2613205) — errores:", len(app.exception), "| res
       "| casilla marcada en la lista:", int(lista()["Mapa"].sum()))
 app.session_state["ubicar_ids"] = []
 
-# Cambiar de ministerio (Transportes) y volver a revisar
-app.selectbox[0].select("TRANSPORTES Y COMUNICACIONES").run()
-print("4. Transportes — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric])
+# Salud tiene 3 pliegos: el árbol muestra los pliegos; al elegir el Ministerio de Salud, sus unidades ejecutoras
+app.selectbox[CARTERA].select("SALUD").run()
+print("4. Salud — errores:", len(app.exception), "| métricas:", metricas(), "| pliegos:", app.selectbox[PLIEGO].options[1:])
+app.selectbox[PLIEGO].select("MINISTERIO DE SALUD").run()
+print("4b. Pliego Ministerio de Salud — errores:", len(app.exception), "| métricas:", metricas(),
+      "| unidades ejecutoras:", len(app.selectbox[UNIDAD].options) - 1)
 
-# Elegir la cartera completa: debe mostrar el desglose por ministerio y ninguna tarjeta de proyecto
-app.selectbox[0].select("CARTERA COMPLETA").run()
-fichas = [b for b in app.button if b.label == "Ver ficha"]
-print("5. Cartera completa — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric],
-      "| tarjetas:", len(fichas), "| cajas del desglose:", sum(m.value.count('class="edt-caja"') for m in app.markdown),
-      "| indicadores:", cifras())
-
-# Recorrer todos los ministerios: ninguno debe dar error (por ejemplo, los que no tienen presupuesto 2026)
+# Todos los sectores y gobiernos regionales: ninguno debe dar error y todos deben tener sus 5 indicadores
+app.selectbox[NIVEL].select(TODO).run()
+carteras = app.selectbox[CARTERA].options[1:]
 fallas = []
-for s in app.selectbox[0].options[1:]:
-    app.selectbox[0].select(s).run()
+for c in carteras:
+    app.selectbox[CARTERA].select(c).run()
     if app.exception or cifras() != 5:
-        fallas.append(s)
-print("6. Los 33 ministerios o entidades — con error o sin sus 5 indicadores:", fallas or "ninguno")
+        fallas.append(c)
+print("5. Las", len(carteras), "carteras (sectores y gobiernos regionales) — con error o sin sus 5 indicadores:", fallas or "ninguna")
 
-# Nivel 2 (ministerio): elegir el estado "Atrasado" en el MIDIS; las cifras deben ser solo las de los atrasados
-#   Selectores: [0] cartera, [1] estado del ministerio, [2] unidad ejecutora, [3] estado de la unidad
-app.selectbox[0].select("DESARROLLO E INCLUSION SOCIAL").run()
-app.selectbox[1].select("Atrasado").run()
-print("7. Nivel 2, MIDIS con estado 'Atrasado' — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric])
+# Gobiernos regionales: el árbol con sus gobiernos regionales; Junín y solo sus IOARR
+app.selectbox[CARTERA].select(TODO).run()
+app.selectbox[NIVEL].select("Gobierno regional").run()
+print("6. Gobiernos regionales — errores:", len(app.exception), "| métricas:", metricas(), "| cajas:", cajas())
+app.selectbox[CARTERA].select("GOBIERNO REGIONAL JUNIN").run()
+app.selectbox[TIPO].select("IOARR").run()
+print("6b. Junín, solo IOARR — errores:", len(app.exception), "| métricas:", metricas(), "| filas:", len(lista()))
 
-# Nivel 3 (unidad ejecutora): elegir una unidad y un estado
-app.selectbox[1].select("Todos los estados").run()
-app.selectbox[2].select(app.selectbox[2].options[1]).run()
-app.selectbox[3].select("Sin presupuesto este año").run()
-print("8. Nivel 3, primera unidad y 'Sin presupuesto este año' — errores:", len(app.exception), "| métricas:", [m.value for m in app.metric])
+# Estado y unidad ejecutora en el MIDIS
+app.selectbox[TIPO].select(TODO).run()
+app.selectbox[NIVEL].select("Gobierno nacional").run()
+app.selectbox[CARTERA].select("DESARROLLO E INCLUSION SOCIAL").run()
+app.selectbox[ESTADO].select("Atrasado").run()
+print("7. MIDIS con estado 'Atrasado' — errores:", len(app.exception), "| métricas:", metricas())
+app.selectbox[ESTADO].select(TODO).run()
+app.selectbox[UNIDAD].select(app.selectbox[UNIDAD].options[1]).run()
+app.selectbox[ESTADO].select(app.selectbox[ESTADO].options[-1]).run()
+print("8. Primera unidad del MIDIS y su último estado (", app.selectbox[ESTADO].value, ") — errores:", len(app.exception),
+      "| métricas:", metricas())
 
-# Abrir la app directamente desde un enlace a una ficha (RENIEC), sin elegir nada antes: debe ir a su ministerio y abrir la ficha
-enlace = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app" / "app.py"), default_timeout=120)
+# Abrir la app directamente desde un enlace a una ficha (RENIEC), sin elegir nada antes: debe ir a su sector y abrir la ficha
+enlace = AppTest.from_file(APP, default_timeout=180)
 enlace.query_params["ficha"] = "2324655"
 enlace.run()
-print("9. Enlace directo ?ficha=2324655 — errores:", len(enlace.exception), "| cartera:", enlace.selectbox[0].value,
+print("9. Enlace directo ?ficha=2324655 — errores:", len(enlace.exception), "| sector:", enlace.selectbox[CARTERA].value,
       "| ficha abierta:", any("¿Cuánto se ha ejecutado?" in m.value for m in enlace.markdown))
 
-# Búsqueda (conversación 3): sin tildes, palabra por palabra y con aviso cuando la obra no es del gobierno nacional
-busca = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app" / "app.py"), default_timeout=120)
+# Búsqueda: sin tildes, palabra por palabra y con aviso cuando no hay resultados
+busca = AppTest.from_file(APP, default_timeout=180)
 busca.run()
-busca.selectbox[0].select("SALUD").run()
+busca.selectbox[CARTERA].select("SALUD").run()
 busca.text_input[0].input("bernales").run()
 print("10. Buscar 'bernales' en Salud — errores:", len(busca.exception), "| filas:", len(busca.dataframe[-1].value),
       "| incluye el hospital:", busca.dataframe[-1].value["Proyecto"].str.contains("Demuele").any())
 busca.text_input[0].input("hospital de Chupaca").run()
-print("    Buscar 'hospital de Chupaca' — errores:", len(busca.exception), "| aviso:", [i.value[:60] for i in busca.info])
+print("    Buscar 'hospital de Chupaca' en Salud — errores:", len(busca.exception), "| aviso:", [i.value[:90] for i in busca.info])
+busca.selectbox[CARTERA].select(TODO).run()
+busca.text_input[0].input("Antonio Lorena").run()
+resultado = busca.dataframe[-1].value
+print("    Buscar 'Antonio Lorena' en todo el portafolio — errores:", len(busca.exception), "| filas:", len(resultado),
+      "| dónde:", resultado["Sector o gobierno regional"].unique()[:3].tolist() if "Sector o gobierno regional" in resultado else "-")
 
-for e in app.exception:
-    print("ERROR:", e.value)
+for prueba in (app, enlace, busca):
+    for e in prueba.exception:
+        print("ERROR:", e.value)
