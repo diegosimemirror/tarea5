@@ -8,7 +8,7 @@ preguntas en lenguaje simple** (¿qué es?, ¿qué problema resuelve?, ¿cuánto
 termina?, ¿cómo va?) para quienes deciden o supervisan sin ser especialistas en Invierte.pe.
 
 - **Usuario objetivo:** alta dirección, cooperantes, asesores, periodistas y ciudadanía. **No** es el especialista de la OPMI.
-- **Alcance actual:** las 12 731 inversiones activas del gobierno nacional, con datos al 08/11/2026.
+- **Alcance actual:** las 26 412 inversiones activas del gobierno nacional (12 731) y de los gobiernos regionales (13 681), con datos al 08/11/2026.
 
 ## Cómo correrlo
 

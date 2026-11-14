@@ -2,7 +2,7 @@
 
 Simplificamos la lectura de cómo van los proyectos de inversión del Estado peruano: cuántos hay, cuánto cuestan, cuánto se ha ejecutado, dónde están y qué problemas reportan, en preguntas simples y con datos abiertos del MEF.
 
-> **Demo en vivo:** https://proyectos-inversiones-peru.streamlit.app/ · Versión del 11/11/2026. Las partes marcadas **POR COMPLETAR** las escribe el founder.
+> **Demo en vivo:** https://proyectos-inversiones-peru.streamlit.app/ · Versión del 14/11/2026: gobierno nacional y gobiernos regionales. Las partes marcadas **POR COMPLETAR** las escribe el founder.
 
 ## 1. One-liner
 
@@ -20,20 +20,20 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 - **Qué les pasa:**
   - La información existe, pero está escrita para especialistas: siglas (PIM, devengado, UEI, OPMI, IOARR), formatos (8, 9, 12-B) y fichas de un proyecto a la vez.
   - Los informes de seguimiento son textos largos que no dejan ver el conjunto.
-- **Cuánto pesa:** el gobierno nacional tiene **12 731 inversiones activas por S/ 621 mil millones**. Con nuestras reglas, **3 631 están atrasadas** según sus propias fechas registradas.
+- **Cuánto pesa:** el gobierno nacional y los gobiernos regionales tienen **26 412 inversiones activas por S/ 934 mil millones** (12 731 nacionales por S/ 621 mil millones y 13 681 regionales por S/ 313 mil millones). Con nuestras reglas, **6 709 están atrasadas** según sus propias fechas registradas (3 631 nacionales y 3 078 regionales).
 - **Cómo lo resuelven hoy:** abren el SSI ficha por ficha, piden un Excel a la OPMI o leen informes.
 - **Evidencia:** notas de 4 conversaciones en [`docs/research/`](docs/research/). Las dos primeras son anteriores a la app y están reconstruidas de memoria; las dos últimas son revisiones de la app:
   - **Noviembre–diciembre de 2019, asesores de la OPMI de un ministerio del sector salud** ([nota 1](docs/research/01_conversacion.md)): para seguir las obras del Bicentenario era difícil tener al día una matriz con ejecución, ubicación, problemas y riesgos.
   - **Julio de 2023, la banca multilateral con la alta dirección de un ministerio del sector salud** ([nota 2](docs/research/02_conversacion.md)): lo primero que pidió fue una cartera de proyectos visible y ordenable por temas. No se pudo mostrar en la reunión: se armó después, en Excel que se actualizaban uno sobre otro.
   - **11 de noviembre de 2026, un especialista en inversión pública revisa la app** ([nota 3](docs/research/03_conversacion.md)):
     - pide usar el término oficial ("costo total") y aclarar tres etiquetas: "programación desde 2027", "costo duplicado o más" y "expediente técnico";
-    - no encontró los hospitales de Chupaca y Antonio Lorena, que son obras de gobiernos regionales y no están en esta versión.
-  - **11 de noviembre de 2026, una especialista en inversiones del Estado** ([nota 4](docs/research/04_conversacion.md)): pide ordenar la cartera como la estructura presupuestal (nivel de gobierno → sector → pliego → unidad ejecutora → inversión). Hoy la app se salta el pliego.
+    - no encontró los hospitales de Chupaca y Antonio Lorena, que son obras de gobiernos regionales. No estaban en la primera versión; desde el 14/11/2026 la app incluye los gobiernos regionales y los encuentra.
+  - **11 de noviembre de 2026, una especialista en inversiones del Estado** ([nota 4](docs/research/04_conversacion.md)): pide ordenar la cartera como la estructura presupuestal (nivel de gobierno → sector → pliego → unidad ejecutora → inversión). La primera versión se saltaba el pliego; desde el 14/11/2026 la app sigue ese orden.
 
 ## 4. Solución e insight
 
-**Solución.** Primero ves la **cartera completa**: cada ministerio o entidad con su número de proyectos y su costo, y cinco indicadores de cartera (presupuesto por gastar, cambio de costos, financiamiento, problemas reportados y atraso). Luego eliges un ministerio y ves:
-1. El **árbol de su cartera**: el ministerio, sus unidades ejecutoras y sus proyectos.
+**Solución.** Primero ves el **portafolio total**: el gobierno nacional y los gobiernos regionales, con cada sector o gobierno regional, su número de proyectos y su costo. Luego acotas con seis listas, cada una con la opción «Todos»: nivel de gobierno, sector o gobierno regional, pliego, unidad ejecutora, tipo de inversión (proyecto, IOARR, IRI u otros) y estado. Para cualquier selección ves cinco indicadores de cartera (presupuesto por gastar, cambio de costos, financiamiento, problemas reportados y atraso) y:
+1. El **árbol de la cartera**: sus sectores o gobiernos regionales, sus pliegos o sus unidades ejecutoras.
 2. La **lista de proyectos**, ordenable, y un **mapa** donde se ubica cada uno.
 3. La **ficha** de cada proyecto, con un título que dice qué hace y para qué (escrito con IA a partir de la descripción del MEF) y preguntas simples: ¿qué es?, ¿qué problema resuelve?, ¿cuánto cuesta?, ¿cuánto se ha ejecutado?, ¿tiene financiamiento?, ¿cuándo termina?, ¿cómo va? y ¿qué problemas reporta?
 4. El detalle técnico, a un clic, en el MEF.
@@ -52,12 +52,12 @@ Busco facilitar la comunicación de información densa para la toma de decisione
   ```bash
   pip install -r requirements.txt
   python scripts/01_descargar.py      # baja los datos del MEF (≈ 537 MB)
-  python scripts/03_preparar.py       # arma la base del gobierno nacional
+  python scripts/03_preparar.py       # arma la base del gobierno nacional y los gobiernos regionales
   python scripts/04_traducir.py       # cinco preguntas en lenguaje simple
   streamlit run app/app.py
   ```
   Los archivos procesados ya vienen en `data/procesado/`, así que basta con el último comando.
-- **Capturas** (app pública, datos del MEF al 08/11/2026):
+- **Capturas** (app pública, datos del MEF al 08/11/2026; versión del 11/11/2026, antes de sumar los gobiernos regionales):
   1. La cartera completa y sus cinco indicadores.
 
      ![Cartera completa con sus cinco indicadores](docs/capturas/01_cartera_completa.png)
@@ -84,7 +84,7 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 - **Paga:** la propia **entidad pública**. Contrata la oficina que hoy arma los reportes (planeamiento u OPMI).
 - **Evidencia:** en julio de 2023, la alta dirección de un ministerio no pudo mostrar su cartera en una reunión con la banca multilateral; hubo que armarla después ([nota 2](docs/research/02_conversacion.md)).
 - **Segundo grupo:** la banca multilateral, los cooperantes y las consultoras, que revisan carteras de varios sectores antes de financiar.
-- **Gratis:** la versión que ya funciona (gobierno nacional), para la ciudadanía, los periodistas y los estudiantes.
+- **Gratis:** la versión que ya funciona (gobierno nacional y gobiernos regionales), para la ciudadanía, los periodistas y los estudiantes.
 
 ### Precio
 **US$ 100 al mes por entidad** (≈ S/ 370), o **US$ 1 200 al año**, hasta 5 usuarios. Incluye:
@@ -113,10 +113,11 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 - **La IA se paga por proyecto actualizado, no por usuario,** así que el costo por cliente baja con cada cliente nuevo.
 
 ### Qué sigue
-1. Gobiernos regionales y locales (13 681 y 124 229 inversiones).
-2. Pasar de "problemas reportados" a "riesgos" con IA.
-3. Historial diario y alertas.
-4. Los primeros 3 clientes, entre las entidades donde el founder ha trabajado.
+1. Gobiernos locales (124 229 inversiones) y títulos con IA para los proyectos regionales.
+2. La causa oficial de cada obra paralizada (Contraloría) en su ficha, y portafolios propios para comparar dos grupos de proyectos.
+3. Pasar de "problemas reportados" a "riesgos" con IA.
+4. Historial diario y alertas.
+5. Los primeros 3 clientes, entre las entidades donde el founder ha trabajado.
 
 ## 8. Herramientas del curso
 
@@ -135,5 +136,7 @@ Claude Code escribió los scripts de descarga, exploración, preparación y trad
 - **Fuente:** MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al 08/11/2026.
 - **Exploración y decisiones de limpieza:** [`docs/informe_exploracion.md`](docs/informe_exploracion.md).
 - **Mapa de procesos:** [`docs/mapa_de_procesos.md`](docs/mapa_de_procesos.md).
+- **Alcance:** gobierno nacional y gobiernos regionales; los gobiernos locales aún no están.
+- **Títulos con IA:** por ahora solo en el gobierno nacional. Los proyectos regionales muestran su nombre oficial.
 - **El estado de cada proyecto se calcula con reglas de ejemplo** a partir de las fechas y montos que registran las entidades. No es una evaluación oficial.
 - **Datos personales:** no se usan.
