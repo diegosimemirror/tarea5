@@ -17,7 +17,10 @@ import html
 import unicodedata   # unicodedata: quitar las tildes, para que «Sanchez» encuentre «Sánchez» al buscar
 import pandas as pd
 import pydeck as pdk   # pydeck: mapas interactivos; viene instalado con Streamlit
-from resumen_cartera import resumen   # resumen(): indicadores de cartera de cualquier grupo de proyectos (app/resumen_cartera.py)
+from resumen_cartera import resumen, proporcion   # resumen(): indicadores de cartera de cualquier grupo de proyectos (app/resumen_cartera.py)
+# Guardar y abrir los portafolios A y B en un enlace o en un archivo CSV (app/portafolios.py)
+from portafolios import LETRAS, MAX_ENLACE, codigos_del_enlace, a_enlace, a_csv, leer_csv
+from urllib.parse import urlencode   # urlencode: arma el texto del enlace (?a=…&b=…) con caracteres seguros (viene con Python)
 import streamlit as st
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -31,6 +34,13 @@ st.set_page_config(page_title="Cartera de inversiones del Estado", page_icon="�
 # PASO 5.1: Cargar los datos una sola vez (st.cache_data guarda la tabla en memoria entre clics)
 # ============================================================
 IA = RAIZ / "data" / "procesado" / "ia_titulos.parquet"
+# Obras paralizadas según la Contraloría (Proceso 8): una fila por obra, unida a su proyecto por el CUI
+CONTRALORIA = PROCESADO / "contraloria_paralizadas.parquet"
+FUENTE_CONTRALORIA = ("Contraloría General de la República, Informe de obras paralizadas en el territorio nacional a junio "
+                      "de 2026, Anexo N.° 01")
+URL_CONTRALORIA = ("https://www.gob.pe/institucion/contraloria/informes-publicaciones/"
+                   "8489152-informe-de-obras-paralizadas-en-el-territorio-nacional-a-junio-de-2026")
+FECHA_CONTRALORIA = "30/06/2026"
 
 def marca_datos():
     """Fecha de modificación de los archivos de datos. Se pasa a las funciones con caché: si un archivo cambia
@@ -70,7 +80,18 @@ def cargar(marca):
     #   Antes: la búsqueda solo leía el título y el lugar | Después: también el nombre oficial y la unidad ejecutora
     tabla["_busqueda"] = (tabla["que_es"].fillna("") + " " + tabla["nombre"].fillna("") + " " + tabla["lugar"].fillna("")
                           + " " + tabla["unidad"].fillna("") + " " + tabla["id"].astype(str)).map(sin_tildes)
+    # Marca de obra paralizada según la Contraloría (Proceso 8), para la ficha y para comparar portafolios
+    #   Antes: sin la columna | Después: True en los proyectos con al menos una obra en el anexo de la Contraloría
+    tabla["paralizada_cgr"] = tabla["id"].isin(pd.read_parquet(CONTRALORIA)["id"]) if CONTRALORIA.exists() else False
     return tabla
+
+@st.cache_data
+def cargar_paralizadas(marca):
+    """Las obras paralizadas según la Contraloría (Proceso 8): causa, avance físico, año de inicio y código INFOBRAS.
+    Si el archivo no existe, una tabla vacía: la ficha simplemente no muestra el recuadro."""
+    if CONTRALORIA.exists():
+        return pd.read_parquet(CONTRALORIA)
+    return pd.DataFrame(columns=["id", "infobras", "obra", "causa", "avance_fisico_obra", "anio_inicio_obra"])
 
 @st.cache_data
 def cargar_brechas(marca):
@@ -84,6 +105,7 @@ def cargar_brechas(marca):
 marca = marca_datos()
 inversiones = cargar(marca)
 brechas_todas = cargar_brechas(marca)
+paralizadas = cargar_paralizadas(marca)
 DIAS_AL_CIERRE = (pd.Timestamp("2026-12-31") - pd.Timestamp("2026-11-10")).days   # misma fecha de referencia que los Procesos 4 y 7
 
 # Nombres de sector que entiende cualquiera (el pliego, p. ej. «Ministerio de Salud», va en su propia lista)
@@ -206,8 +228,13 @@ def pie_de_pagina():
             "para 2027 en adelante.\n"
             "- **Ejecución:** lo devengado en 2026 frente al presupuesto 2026, y lo devengado en toda su vida frente a su costo.\n"
             "- **Atraso:** meses desde la última fecha de fin registrada; frente al plan original puede ser mayor. "
-            "**Plan de gasto:** lo gastado de enero a octubre de 2026 frente a lo que la entidad planeó gastar en esos meses.")
-    st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}.")
+            "**Plan de gasto:** lo gastado de enero a octubre de 2026 frente a lo que la entidad planeó gastar en esos meses.\n\n"
+            "**Obra paralizada según la Contraloría:** el proyecto tiene al menos una obra en la lista de obras paralizadas "
+            "de la Contraloría (corte al 30/06/2026). Se une por el código del proyecto (CUI); un proyecto puede tener varias "
+            "obras. La causa es la que registra la Contraloría. Es independiente del estado de arriba, que sale de las fechas "
+            "y montos que la entidad registra en el MEF.")
+    st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}. "
+               f"Obras paralizadas: {FUENTE_CONTRALORIA}, con corte al {FECHA_CONTRALORIA}.")
 
 def tarjeta(columna, pregunta, cifra, rotulo, lineas=()):
     """Una tarjeta de lectura rápida: la pregunta, una cifra grande con una etiqueta corta, y hasta 3 líneas que
@@ -388,6 +415,14 @@ if "f_nivel" not in st.session_state:
     hallado = inversiones[inversiones["id"] == pedido_inicial] if pedido_inicial else inversiones.iloc[0:0]
     if len(hallado):
         st.session_state["f_nivel"], st.session_state["f_cartera"] = hallado.iloc[0]["nivel"], hallado.iloc[0]["cartera"]
+
+# Portafolios A y B (PASO 5.7): la primera vez se abren desde el enlace (?a=CUI,CUI&na=nombre…); después viven en la sesión.
+#   Antes: texto del enlace | Después: listas de códigos que existen en la base (los demás se ignoran) y sus nombres
+if "port_A" not in st.session_state:
+    validos = set(inversiones["id"])
+    for letra in LETRAS:
+        st.session_state[f"port_{letra}"] = sorted(c for c in codigos_del_enlace(st.query_params.get(letra.lower())) if c in validos)
+        st.session_state[f"nombre_{letra}"] = (st.query_params.get("n" + letra.lower()) or f"Portafolio {letra}")[:60]
 
 def lista(columna, etiqueta, tabla, campo, clave, todos, nombre=str, orden=None):
     """Una lista desplegable: primero «Todos», luego cada opción con su número de proyectos.
@@ -583,6 +618,35 @@ try:
 except TypeError:
     ventana_ficha = st.dialog("Ficha del proyecto", width="large")
 
+def recuadro_contraloria(fila):
+    """PASO 5.5b: solo si el proyecto tiene obras en la lista de obras paralizadas de la Contraloría (Proceso 8).
+    Muestra la causa oficial, el avance físico y el año de inicio de cada obra, con su enlace a INFOBRAS, su fuente y su fecha.
+    Antes: filas de contraloria_paralizadas.parquet | Después: un recuadro dentro de la ficha (no aparece si no hay obras)."""
+    obras = paralizadas[paralizadas["id"] == fila["id"]]
+    if obras.empty:
+        return
+    def describir(o):
+        partes = [f"<b>Causa:</b> {html.escape(o.causa)}"]
+        if pd.notna(o.avance_fisico_obra):
+            partes.append(f"<b>avance físico de la obra:</b> {o.avance_fisico_obra:.0f} %")
+        if pd.notna(o.anio_inicio_obra):
+            partes.append(f"<b>empezó en</b> {int(o.anio_inicio_obra)}")
+        if str(o.infobras).isdigit():
+            partes.append(f'<a href="https://infobras.contraloria.gob.pe/InfobrasWeb/Mapa/Obra?ObraId={o.infobras}" '
+                          f'target="_blank">ver la obra en INFOBRAS ↗</a>')
+        return " · ".join(partes)
+    with st.container(border=True):
+        if len(obras) == 1:
+            cuerpo = f'<p class="respuesta">{describir(next(obras.itertuples()))}</p>'
+        else:
+            # Varias obras del mismo proyecto: el nombre de cada obra (acortado) y sus datos
+            cuerpo = (f'<p class="respuesta">Este proyecto tiene {len(obras)} obras paralizadas:</p><ul class="detalle">'
+                      + "".join(f"<li>{html.escape(textwrap.shorten(str(o.obra).capitalize(), 110, placeholder='…'))}: "
+                                f"{describir(o)}</li>" for o in obras.itertuples()) + "</ul>")
+        st.markdown(f'<p class="pregunta">Obra paralizada según la Contraloría</p>{cuerpo}', unsafe_allow_html=True)
+        st.caption(f"Fuente: [{FUENTE_CONTRALORIA}]({URL_CONTRALORIA}). Fecha de corte: {FECHA_CONTRALORIA}. "
+                   "El estado de la ficha sale de los datos del MEF; esta información, de la Contraloría.")
+
 @ventana_ficha
 def ficha(fila):
     st.markdown(chip(fila["estado"]) + f' <span style="color:#5b6068">{html.escape(fila["estado_motivo"])}</span>', unsafe_allow_html=True)
@@ -632,6 +696,8 @@ def ficha(fila):
     for pregunta, respuesta, detalle in preguntas:
         cuerpo = f'<p class="respuesta">{html.escape(respuesta)}</p>' if respuesta else ""
         st.markdown(f'<p class="pregunta">{pregunta}</p>{cuerpo}{detalle}', unsafe_allow_html=True)
+        if pregunta == "¿Cómo va?":
+            recuadro_contraloria(fila)
     st.caption("El título lo redactó una IA a partir de la descripción técnica del MEF; el nombre oficial está en "
                "«Para especialistas». El resto del resumen se elaboró automáticamente con los datos del MEF."
                if fila["redactado_por_ia"] else "Resumen elaborado automáticamente a partir de los datos del MEF.")
@@ -685,19 +751,24 @@ if unidad == TODO:
 #   "Ver ficha": al marcarla se abre la ficha de ese proyecto
 #   "Ubicar":    al marcarla, el proyecto se resalta en el mapa (al final de la página). Las marcas se guardan por proyecto,
 #                así que se mantienen aunque se abra una ficha o cambie el orden
+#   "A" y "B":   al marcarlas, el proyecto entra en el portafolio A o B (PASO 5.7); también se guardan por proyecto
 ubicar = set(st.session_state.get("ubicar_ids", []))
 tabla.insert(0, "Ficha", False)
 tabla.insert(1, "Mapa", mostrar["id"].isin(ubicar))
+tabla.insert(2, "A", mostrar["id"].isin(set(st.session_state["port_A"])))
+tabla.insert(3, "B", mostrar["id"].isin(set(st.session_state["port_B"])))
 # La clave cambia con los filtros y después de abrir cada ficha: así la lista vuelve a mostrarse sin "Ver ficha" marcado
 version = st.session_state.get("version_lista", 0)
 clave_lista = f"lista_{version}_" + str(abs(hash((nivel, cartera_elegida, pliego, unidad, tipo, estado, len(vista), orden, busqueda,
                                                    tuple(mostrar["id"].head(3))))))
 editada = st.data_editor(
     tabla, hide_index=True, width="stretch", height=min(38 + 35 * len(tabla), 460), key=clave_lista,
-    disabled=[c for c in tabla.columns if c not in ("Ficha", "Mapa")],   # solo se marcan las casillas; los datos no se editan
+    disabled=[c for c in tabla.columns if c not in ("Ficha", "Mapa", "A", "B")],   # solo se marcan las casillas; los datos no se editan
     column_config={
         "Ficha": st.column_config.CheckboxColumn("Ver ficha", help="Marca la casilla para abrir la ficha del proyecto", width=90),
         "Mapa": st.column_config.CheckboxColumn("Ubicar", help="Marca la casilla para resaltar el proyecto en el mapa", width=75),
+        "A": st.column_config.CheckboxColumn("A", help=f"Agregar a mi portafolio A («{st.session_state['nombre_A']}»)", width=45),
+        "B": st.column_config.CheckboxColumn("B", help=f"Agregar a mi portafolio B («{st.session_state['nombre_B']}»)", width=45),
         # Anchos en píxeles para que las cifras clave se vean sin desplazarse; el lugar y la unidad quedan a la derecha
         "Estado": st.column_config.TextColumn("Estado", width=150),
         "Proyecto": st.column_config.TextColumn("Proyecto", width=290),
@@ -710,13 +781,17 @@ editada = st.data_editor(
     })
 st.caption(plural(len(vista), "proyecto")
            + (f" (se muestran los primeros {MAX_FILAS:,}: usa las listas o el buscador para acotar)" if len(vista) > MAX_FILAS else "")
-           + ". Marca «Ver ficha» para abrir la ficha de un proyecto, o «Ubicar» para resaltarlo en el mapa (al final de la página).")
+           + ". Marca «Ver ficha» para abrir la ficha de un proyecto, «Ubicar» para resaltarlo en el mapa (al final de la "
+           "página), o «A» y «B» para armar tus portafolios y compararlos (debajo de la lista).")
 
-# Actualizar las marcas de "Ubicar" de los proyectos que están en la lista (los demás conservan su marca)
+# Actualizar las marcas de "Ubicar", "A" y "B" de los proyectos que están en la lista (los demás conservan su marca)
 #   Antes: casillas en la tabla | Después: el conjunto de proyectos marcados, guardado entre clics
 visibles = set(mostrar["id"])
 marcados_mapa = set(mostrar.loc[editada.index[editada["Mapa"]], "id"])
 st.session_state["ubicar_ids"] = sorted((ubicar - visibles) | marcados_mapa)
+for letra in LETRAS:
+    marcados_port = set(mostrar.loc[editada.index[editada[letra]], "id"])
+    st.session_state[f"port_{letra}"] = sorted((set(st.session_state[f"port_{letra}"]) - visibles) | marcados_port)
 
 # Abrir la ficha de la fila marcada. La tabla conserva el índice de 'vista', así que se busca la fila por ese índice.
 marcadas = editada.index[editada["Ficha"]].tolist()
@@ -733,6 +808,132 @@ if pedido and not abierta and st.session_state.get("ficha_enlace") != pedido:
     if len(encontrados):
         st.session_state["ficha_enlace"] = pedido
         ficha(encontrados.iloc[0])
+
+# ============================================================
+# PASO 5.7: Mis portafolios A y B — armarlos, compararlos y guardarlos (sin cuentas: enlace o archivo)
+#   Insumo: los proyectos marcados en las columnas A y B de la lista (o agregados de una vez con un botón)
+#   Resultado: una tabla con los mismos indicadores para los dos grupos, la lista de cada uno, un enlace y un archivo
+#   Compara cómo están HOY; para medir si un grupo mejora en el tiempo harían falta copias de los datos en varias fechas.
+# ============================================================
+INDICADORES = ["Proyectos", "Costo total", "Presupuesto 2026", "Ejecución 2026 (gastado ÷ presupuesto 2026)",
+               "Ejecución acumulada (gastado ÷ costo)", "Cambio de costo desde su aprobación", "Atrasados",
+               "Atraso típico de los atrasados", "Con problemas reportados", "Con obras paralizadas según la Contraloría"]
+
+def comparar(grupos):
+    """Los mismos indicadores para cada portafolio, uno al lado del otro.
+    Antes: los proyectos de A y los de B | Después: una tabla de 10 filas (indicadores) × una columna por portafolio.
+    Entre paréntesis, el porcentaje de los proyectos del portafolio."""
+    columnas = {}
+    for letra, g in grupos.items():
+        r, n = resumen(g), len(g)
+        cuota = lambda k: f"{int(k):,} ({porc(k / n)})" if n else "0"
+        cambio = r["pct_desv_total"]
+        columnas[f"{letra} · {st.session_state[f'nombre_{letra}']}"] = [
+            f"{n:,}", millones(r["costo"]),
+            millones(r["pim_2026"]) if r["pim_2026"] > 0 else "sin presupuesto 2026",
+            porc(proporcion(r["dev_2026"], r["pim_2026"])),
+            porc(proporcion(g["dev_acumulado"].sum(), r["costo"])),
+            f"{'+' if cambio >= 0 else '−'}{abs(100 * cambio):.0f} %" if pd.notna(cambio) else "sin dato",
+            cuota(r["n_atrasados"]),
+            meses(r["mediana_meses_atraso"]) if pd.notna(r["mediana_meses_atraso"]) else "—",
+            cuota(r["n_reporta_problemas"]),
+            cuota(g["paralizada_cgr"].sum())]
+    return pd.DataFrame({"Indicador": INDICADORES, **columnas})
+
+def agregar_lista(letra, ids):
+    """Botón «Agregar los N de la lista»: suma al portafolio todos los proyectos de la lista (con sus filtros y búsqueda)."""
+    st.session_state[f"port_{letra}"] = sorted(set(st.session_state[f"port_{letra}"]) | set(ids))
+    st.session_state["version_lista"] = st.session_state.get("version_lista", 0) + 1   # la lista se vuelve a dibujar marcada
+
+def vaciar(letra):
+    st.session_state[f"port_{letra}"] = []
+    st.session_state["version_lista"] = st.session_state.get("version_lista", 0) + 1
+
+def abrir_archivo():
+    """Al subir un archivo CSV guardado antes: reemplaza los dos portafolios y sus nombres por los del archivo.
+    Los códigos que ya no están en la base (por ejemplo, proyectos cerrados desde entonces) se ignoran y se avisa."""
+    archivo = st.session_state.get("archivo_portafolios")
+    if archivo is None:
+        return
+    try:
+        leidos, nombres = leer_csv(archivo.getvalue())
+    except Exception as error:      # archivo que no es un CSV de portafolios
+        st.session_state["aviso_portafolios"] = f"No se pudo leer el archivo: {error}"
+        return
+    validos = set(inversiones["id"])
+    for letra in LETRAS:
+        st.session_state[f"port_{letra}"] = sorted(c for c in leidos[letra] if c in validos)
+        st.session_state[f"nombre_{letra}"] = st.session_state[f"campo_nombre_{letra}"] = nombres[letra][:60]
+    ignorados = sum(len(leidos[l]) for l in LETRAS) - sum(len(st.session_state[f"port_{l}"]) for l in LETRAS)
+    st.session_state["aviso_portafolios"] = ("Portafolios abiertos desde el archivo."
+                                             + (f" Se ignoraron {ignorados:,} códigos que ya no están en la base." if ignorados else ""))
+    st.session_state["version_lista"] = st.session_state.get("version_lista", 0) + 1
+
+def copiar_nombre(letra):
+    """El nombre escrito en la casilla se guarda aparte («nombre_A»), para no perderlo si la casilla no se dibuja en algún
+    momento (Streamlit borra el estado de las casillas que no aparecen en la página)."""
+    st.session_state[f"nombre_{letra}"] = (st.session_state[f"campo_nombre_{letra}"].strip() or f"Portafolio {letra}")[:60]
+
+portafolio = {letra: st.session_state[f"port_{letra}"] for letra in LETRAS}
+hay_portafolio = any(portafolio.values())
+with st.expander("Mis portafolios: comparar A y B"
+                 + (f" (A: {plural(len(portafolio['A']), 'proyecto')} · B: {plural(len(portafolio['B']), 'proyecto')})"
+                    if hay_portafolio else ""), expanded=hay_portafolio):
+    st.markdown("Arma dos grupos de proyectos y compáralos con los mismos indicadores: por ejemplo, las obras que priorizas "
+                "frente al resto, o dos gobiernos regionales. Marca proyectos en las columnas **A** y **B** de la lista "
+                "(en cualquier selección) o agrega de una vez todos los de la lista.")
+    for columna, letra in zip(st.columns(2), LETRAS):
+        if f"campo_nombre_{letra}" not in st.session_state:
+            st.session_state[f"campo_nombre_{letra}"] = st.session_state[f"nombre_{letra}"]
+        columna.text_input(f"Nombre del portafolio {letra}", key=f"campo_nombre_{letra}", max_chars=60,
+                           on_change=copiar_nombre, args=(letra,))
+        boton1, boton2 = columna.columns(2)
+        boton1.button(f"Agregar los {len(vista):,} de la lista", key=f"agregar_{letra}", on_click=agregar_lista,
+                      args=(letra, list(vista["id"])))
+        boton2.button(f"Vaciar {letra}", key=f"vaciar_{letra}", on_click=vaciar, args=(letra,), disabled=not portafolio[letra])
+    if st.session_state.get("aviso_portafolios"):
+        st.info(st.session_state.pop("aviso_portafolios"))
+
+    if hay_portafolio:
+        grupos = {letra: inversiones[inversiones["id"].isin(portafolio[letra])] for letra in LETRAS}
+        st.dataframe(comparar(grupos), hide_index=True, width="stretch")
+        st.caption(f"Compara cómo están hoy los dos grupos: datos del MEF al {FECHA_DATOS} y de la Contraloría con corte al "
+                   f"{FECHA_CONTRALORIA}. Es una primera medida, no una evaluación de desempeño: para saber si un grupo "
+                   "mejora hace falta comparar los mismos indicadores en distintas fechas.")
+        for columna, letra in zip(st.columns(2), LETRAS):
+            g = grupos[letra]
+            columna.markdown(f"**{html.escape(st.session_state[f'nombre_{letra}'])}** · {plural(len(g), 'proyecto')}")
+            if len(g):
+                columna.dataframe(pd.DataFrame({"Proyecto": g["que_es"], "Estado": g["estado"], "Costo (S/)": g["costo"].round(0)}),
+                                  hide_index=True, width="stretch", height=min(38 + 35 * len(g), 250),
+                                  column_config={"Costo (S/)": st.column_config.NumberColumn(format="localized")})
+
+        # Guardar: 1) el enlace de la página (se actualiza solo) y 2) un archivo para descargar
+        nombres = {letra: st.session_state[f"nombre_{letra}"] for letra in LETRAS}
+        parametros = a_enlace(portafolio, nombres)
+        for clave in ("a", "na", "b", "nb"):
+            if clave in parametros and st.query_params.get(clave) != parametros[clave]:
+                st.query_params[clave] = parametros[clave]
+            elif clave not in parametros and clave in st.query_params:
+                del st.query_params[clave]
+        st.markdown("**Guardar tus portafolios** (no se guardan en el servidor ni piden cuenta):")
+        if parametros:
+            base = (st.context.url or "https://proyectos-inversiones-peru.streamlit.app/").split("?")[0]
+            st.caption("Enlace: ábrelo después (o compártelo) para volver a ver estos portafolios.")
+            # safe=",": las comas entre códigos quedan como comas (más fácil de leer que «%2C»)
+            st.code(base.rstrip("/") + "/?" + urlencode(parametros, safe=","), language=None, wrap_lines=True)
+        grandes = [letra for letra in LETRAS if len(portafolio[letra]) > MAX_ENLACE]
+        if grandes:
+            st.caption(f"El portafolio {' y '.join(grandes)} tiene más de {MAX_ENLACE} proyectos y no cabe en el enlace: "
+                       "guárdalo con el archivo.")
+        st.download_button("Descargar mis portafolios (archivo CSV, se abre en Excel)",
+                           data=a_csv(portafolio, nombres, inversiones), file_name="mis_portafolios.csv", mime="text/csv")
+    else:
+        for clave in ("a", "na", "b", "nb"):
+            if clave in st.query_params:
+                del st.query_params[clave]
+    st.file_uploader("Abrir un archivo de portafolios descargado antes (CSV)", type=["csv"], key="archivo_portafolios",
+                     on_change=abrir_archivo)
 
 # ============================================================
 # PASO 5.4c: Mapa (versión rápida, con pydeck, que viene con Streamlit), al final de la página.

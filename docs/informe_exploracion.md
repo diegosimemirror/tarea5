@@ -11,7 +11,7 @@ Fecha: 10/11/2026 · Datos del MEF actualizados al 08/11/2026 · Salida completa
 | `FORMATO_12B.csv` | El último seguimiento de una inversión (incluye cerradas y desactivadas) | 227 566 | 189 MB |
 
 - **Quién produce los datos:** el MEF, a partir de lo que registran las propias entidades en el Banco de Inversiones (Invierte.pe) y en el SIAF.
-- **Cobertura:** todo el país y los tres niveles de gobierno. Esta versión usa solo el **gobierno nacional**: 12 731 inversiones, 33 sectores y 184 entidades.
+- **Cobertura:** todo el país y los tres niveles de gobierno. La primera versión usó solo el **gobierno nacional**: 12 731 inversiones, 33 sectores y 184 entidades. Desde el 14/11/2026 la app suma los **gobiernos regionales** (13 681 inversiones, misma estructura): 26 412 en total. Las cifras de las secciones 2 a 5 son del gobierno nacional.
 - **Diccionario de variables:** el MEF lo publica en su portal, pero **los enlaces dan error 404**. El significado de cada columna se dedujo de su nombre y de los valores. Las dudas quedan marcadas abajo.
 - **Suficiencia:** alcanza para responder qué es, qué brecha cierra, cuánto cuesta, cuándo termina y cómo va cada inversión. No alcanza para saber por qué se atrasa; para eso están los textos del 12-B, que la IA leerá.
 
@@ -67,4 +67,27 @@ Ninguna fila se eliminó: el gobierno nacional entra completo, con sus 12 731 in
 
 - Confirmar con el MEF o con la normativa el significado de `VALOR`, `CONTRIBUCION` y `AVANCE_EJECUCION`.
 - **Validar las reglas del estado** (umbrales de 95 %, 50 % y 180 días). Son reglas de ejemplo.
-- Extender el análisis a los gobiernos regionales: 13 681 inversiones, con la misma estructura.
+- ~~Extender el análisis a los gobiernos regionales~~: hecho el 14/11/2026 (13 681 inversiones).
+
+## 7. Obras paralizadas de la Contraloría (Proceso 8, 14/11/2026)
+
+**Fuente:** Contraloría General de la República, "Informe de obras paralizadas en el territorio nacional a junio de 2026", Anexo N.° 01 (Excel publicado en gob.pe, 0,7 MB). Corte al 30/06/2026. Cada fila es una **obra**, no una inversión: una inversión puede tener varias obras.
+
+| # | Qué se revisó | Qué se encontró | Qué se hizo |
+|---|---|---|---|
+| 1 | Tamaño | 2 262 obras y 38 columnas, en una sola hoja ("Data") | — |
+| 3 | Tipos | Todo se lee como texto; los nombres de columna traen una nota en una segunda línea | Avance físico y año de inicio a número; nombres de columna solo con su primera línea |
+| 4 | Duplicados | Ninguna fila repetida ni código INFOBRAS repetido. 177 CUI aparecen más de una vez: son varias obras de una misma inversión (y los CUI en 0) | Se conservan todas; la ficha lista cada obra |
+| 5 | Faltantes | Avance físico vacío en 54; plazo en 57; las 9 columnas del inventario del MEF (informe situacional, lista priorizada…) vacías en 1 529 | Se dejan vacíos; esas 9 columnas no se usan |
+| 5b | Faltantes disfrazados | **CUI = "0" en 134 obras** (sin código de inversión); "URL" con solo un espacio | Las 134 no se pueden unir con un proyecto y quedan fuera del cruce |
+| 7 | Categorías | Nivel: 1 543 locales, 396 nacionales y 323 regionales. 16 causas; las más comunes: falta de recursos (625), incumplimiento de contrato (592), arbitraje (185), deficiencia en el expediente técnico (164) | — |
+| 8 | Escritura | "9 EVENTOS CLIMÁTICOS" aparece también con un espacio al final (7 obras); las causas llevan su número de código | Se quitan espacios y número: quedan 15 causas, escritas en minúsculas normales |
+| 10 | Atípicos | Avance físico entre 0 y 100 %, ninguno fuera de rango; año de inicio entre 2007 y 2026 | — |
+
+**Cruce con nuestra base (por el CUI):** 551 obras pertenecen a **519 proyectos** (340 obras del gobierno nacional y 211 de los gobiernos regionales). Otras 179 obras nacionales o regionales tienen un CUI que no está entre las inversiones activas (probablemente cerradas o desactivadas) y no se muestran.
+
+**El nivel de gobierno no siempre coincide:** 32 obras que la Contraloría registra como locales son de proyectos que el MEF registra como nacionales (25) o regionales (7), y 29 cambian entre nacional y regional. Se respeta el nivel del MEF, porque el cruce es por el código del proyecto.
+
+**El estado de la app y la Contraloría miden cosas distintas:** de los 519 proyectos con obras paralizadas, 175 figuran "En marcha" con las reglas de la app, que solo usan fechas y montos del MEF. Por eso la ficha muestra la información de la Contraloría en un recuadro aparte, con su fuente y su fecha, sin cambiar el estado.
+
+**Ningún dato se modificó ni se eliminó:** el anexo se guarda tal cual en `data/contraloria/`.

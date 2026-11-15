@@ -35,8 +35,9 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 **Solución.** Primero ves el **portafolio total**: el gobierno nacional y los gobiernos regionales, con cada sector o gobierno regional, su número de proyectos y su costo. Luego acotas con seis listas, cada una con la opción «Todos»: nivel de gobierno, sector o gobierno regional, pliego, unidad ejecutora, tipo de inversión (proyecto, IOARR, IRI u otros) y estado. Para cualquier selección ves cinco indicadores de cartera (presupuesto por gastar, cambio de costos, financiamiento, problemas reportados y atraso) y:
 1. El **árbol de la cartera**: sus sectores o gobiernos regionales, sus pliegos o sus unidades ejecutoras.
 2. La **lista de proyectos**, ordenable, y un **mapa** donde se ubica cada uno.
-3. La **ficha** de cada proyecto, con un título que dice qué hace y para qué (escrito con IA a partir de la descripción del MEF) y preguntas simples: ¿qué es?, ¿qué problema resuelve?, ¿cuánto cuesta?, ¿cuánto se ha ejecutado?, ¿tiene financiamiento?, ¿cuándo termina?, ¿cómo va? y ¿qué problemas reporta?
-4. El detalle técnico, a un clic, en el MEF.
+3. La **ficha** de cada proyecto, con un título que dice qué hace y para qué (escrito con IA a partir de la descripción del MEF) y preguntas simples: ¿qué es?, ¿qué problema resuelve?, ¿cuánto cuesta?, ¿cuánto se ha ejecutado?, ¿tiene financiamiento?, ¿cuándo termina?, ¿cómo va? y ¿qué problemas reporta? Si la obra está en la lista de **obras paralizadas de la Contraloría**, la ficha muestra la causa oficial, el avance físico y el enlace a INFOBRAS, con su fuente y su fecha de corte.
+4. **Mis portafolios A y B:** marcas proyectos en dos grupos (por ejemplo, los que priorizas frente al resto) y los comparas con los mismos indicadores. Se guardan en un enlace o en un archivo CSV, sin cuentas ni datos personales.
+5. El detalle técnico, a un clic, en el MEF.
 
 **Insight.** El problema no es la falta de datos, porque el MEF publica todo y a diario. El problema es que **están escritos para quien los registra, no para quien decide**. El valor está en traducir, no en sumar indicadores.
 
@@ -54,6 +55,8 @@ Busco facilitar la comunicación de información densa para la toma de decisione
   python scripts/01_descargar.py      # baja los datos del MEF (≈ 537 MB)
   python scripts/03_preparar.py       # arma la base del gobierno nacional y los gobiernos regionales
   python scripts/04_traducir.py       # cinco preguntas en lenguaje simple
+  python scripts/07_indicadores.py    # indicadores de cartera
+  python scripts/08_contraloria.py    # obras paralizadas según la Contraloría
   streamlit run app/app.py
   ```
   Los archivos procesados ya vienen en `data/procesado/`, así que basta con el último comando.
@@ -75,7 +78,7 @@ Busco facilitar la comunicación de información densa para la toma de decisione
     C --> D[App web en Streamlit]
     D --> E[Persona en el navegador]
   ```
-- **Modelos y APIs:** API pública de Datos Abiertos del MEF (los datos) y **Gemini 3.5 Flash-Lite** de Google (los títulos de alcance: resume la descripción técnica de cada proyecto en una línea). Se eligió por ser el modelo de Google para tareas masivas y baratas, con nivel gratuito; la IA corre una sola vez por actualización de datos, no cada vez que alguien abre la app.
+- **Modelos y APIs:** API pública de Datos Abiertos del MEF (los datos), el anexo de obras paralizadas de la Contraloría (publicado en gob.pe) y **Gemini 3.5 Flash-Lite** de Google (los títulos de alcance: resume la descripción técnica de cada proyecto en una línea). Se eligió por ser el modelo de Google para tareas masivas y baratas, con nivel gratuito; la IA corre una sola vez por actualización de datos, no cada vez que alguien abre la app.
 
 ## 7. Modelo de negocio
 
@@ -114,16 +117,15 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 
 ### Qué sigue
 1. Gobiernos locales (124 229 inversiones) y títulos con IA para los proyectos regionales.
-2. La causa oficial de cada obra paralizada (Contraloría) en su ficha, y portafolios propios para comparar dos grupos de proyectos.
-3. Pasar de "problemas reportados" a "riesgos" con IA.
-4. Historial diario y alertas.
-5. Los primeros 3 clientes, entre las entidades donde el founder ha trabajado.
+2. Pasar de "problemas reportados" a "riesgos" con IA.
+3. Historial diario y alertas. Con el historial, los portafolios A y B podrán compararse en el tiempo, no solo en un día.
+4. Los primeros 3 clientes, entre las entidades donde el founder ha trabajado.
 
 ## 8. Herramientas del curso
 
 | Herramienta | Sesión | Dónde está | Por qué esta |
 |---|---|---|---|
-| Scraping y APIs (datos abiertos) | 03 | `scripts/01_descargar.py` | Los datos de inversión pública ya existen y son públicos: el valor está en traerlos solos y al día, no en digitarlos. |
+| Scraping y APIs (datos abiertos) | 03 | `scripts/01_descargar.py` (MEF) y `scripts/08_contraloria.py` (Contraloría) | Los datos de inversión pública ya existen y son públicos: el valor está en traerlos solos y al día, no en digitarlos. |
 | Dashboards | 05 | `app/app.py` | La usuaria es la alta dirección: necesita ver su cartera en una pantalla, en el navegador, sin instalar nada. |
 | LLMs con salidas estructuradas | 08 | `scripts/06_ia.py` → `data/procesado/ia_titulos.parquet` (en curso: se titulan primero los proyectos de mayor costo; los que aún no tienen título conservan su nombre oficial) | El nombre oficial de un proyecto casi nunca dice qué hace. La IA lo resume desde la descripción técnica del MEF en un título de una línea, con salida en JSON y un control automático: si el título trae una cifra que no está en el texto del MEF, se descarta. El título dice qué hace el proyecto y para qué; el nombre oficial sigue en la ficha. |
 
@@ -133,7 +135,10 @@ Claude Code escribió los scripts de descarga, exploración, preparación y trad
 
 ## Datos y limitaciones
 
-- **Fuente:** MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al 08/11/2026.
+- **Fuentes:**
+  - MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al 08/11/2026.
+  - Contraloría General de la República, [Informe de obras paralizadas en el territorio nacional a junio de 2026](https://www.gob.pe/institucion/contraloria/informes-publicaciones/8489152-informe-de-obras-paralizadas-en-el-territorio-nacional-a-junio-de-2026), Anexo N.° 01 (corte al 30/06/2026). De sus 2 262 obras, 551 pertenecen a 519 proyectos de esta base; se unen por el CUI.
+- **Crédito:** la idea de usar el anexo de la Contraloría viene de [«Obras que esperan»](https://github.com/bocchienjoyer/obras-que-esperan), de Jose Navarro, compañero de la diplomatura.
 - **Exploración y decisiones de limpieza:** [`docs/informe_exploracion.md`](docs/informe_exploracion.md).
 - **Mapa de procesos:** [`docs/mapa_de_procesos.md`](docs/mapa_de_procesos.md).
 - **Alcance:** gobierno nacional y gobiernos regionales; los gobiernos locales aún no están.
