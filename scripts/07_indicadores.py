@@ -45,7 +45,8 @@ inv = pd.read_parquet(PROCESADO / "cinco_preguntas.parquet")
 brechas = pd.read_parquet(PROCESADO / "brechas.parquet")
 print("7.1 Inversiones:", inv.shape, "| filas de brechas:", brechas.shape)
 ind = inv[["id", "cui", "nivel", "cartera", "sector", "entidad", "unidad", "tipo", "tipo_grupo", "marco", "estado", "avance",
-           "costo", "viable"]].copy()
+           "costo", "viable", "fuente_gasto"]].copy()   # fuente_gasto: SIAF, FONAFE o Sin dato (Proceso 4, paso 4.0)
+sin_dato_gasto = inv["fuente_gasto"] == "Sin dato"     # empresas públicas cuyo gasto no publica el MEF
 
 # ============================================================
 # P1 — PASO 7.2: ¿Qué brecha cubre cada inversión?
@@ -231,7 +232,8 @@ ind["devengado_ene_oct"] = inv["devengado_ene_oct"].fillna(0)
 ind["pct_cumple_programacion"] = (ind["devengado_ene_oct"] / inv["programado_ene_oct"]).where(inv["programado_ene_oct"] > 0)
 ind["rango_programacion"] = pd.cut(ind["pct_cumple_programacion"], [-0.01, 0.7, 0.9, float("inf")],
                                    labels=["Gastó menos del 70 % de lo programado", "Gastó entre 70 % y 90 %",
-                                           "Gastó 90 % o más"]).astype(str).replace("nan", "Sin programación mensual")
+                                           "Gastó 90 % o más"]).astype(object).fillna("Sin programación mensual")
+# (astype(object).fillna: el mismo resultado en pandas 2 y 3; antes, astype(str) dejaba vacíos según la versión de pandas)
 print("7.7 P7 rangos de atraso:", ind["rango_atraso"].value_counts().to_dict())
 
 # ============================================================
@@ -250,8 +252,9 @@ ind["avance_ejecucion"] = inv["avance_ejecucion"]
 ind["avance_fisico"] = inv["avance_fisico"]
 ind["fecha_declaracion"] = inv["fecha_declaracion"]
 ind["avance_fuente"] = inv["avance_fuente"]
-ind["pct_gastado_vida"] = (inv["dev_acumulado"] / inv["costo"]).where(inv["costo"] > 0)
-ind["pct_gastado_2026"] = (inv["dev_2026"].fillna(0) / inv["pim_2026"]).where(inv["pim_2026"] > 0)
+# En las empresas públicas sin gasto publicado ("Sin dato") quedan vacíos: antes salía 0 %, como si no hubieran gastado
+ind["pct_gastado_vida"] = (inv["dev_acumulado"] / inv["costo"]).where((inv["costo"] > 0) & ~sin_dato_gasto)
+ind["pct_gastado_2026"] = (inv["dev_2026"].fillna(0) / inv["pim_2026"]).where((inv["pim_2026"] > 0) & ~sin_dato_gasto)
 
 meses_2026 = inv[[f"dev_2026_{i:02d}" for i in range(1, 12)]].fillna(0).to_numpy()
 mes_decl = inv["fecha_declaracion"].dt.month.fillna(0).astype(int).clip(0, 11).to_numpy()
@@ -295,6 +298,10 @@ def frase_dinero(f):
     """P5: si tiene dinero. Lo gastado (ejecución anual y acumulada) se muestra aparte en la ficha, en
     "¿Cuánto se ha ejecutado?", para no repetirlo aquí."""
     g = f["financiamiento"]
+    if f["fuente_gasto"] == "Sin dato":
+        return "No se sabe: es una empresa pública y el MEF no publica su presupuesto ni su gasto."
+    if g == GRUPOS_FIN[0][0] and f["fuente_gasto"] == "FONAFE":
+        return f"Sí. Tiene {millones(f['pim_2026'])} de presupuesto 2026, según su reporte a FONAFE."
     if g == GRUPOS_FIN[0][0]:
         return f"Sí. Tiene {millones(f['pim_2026'])} de presupuesto 2026."
     if g == GRUPOS_FIN[1][0]:
@@ -443,6 +450,11 @@ for _, f in cartera[solo_carteras].sort_values("costo", ascending=False).iterrow
 lineas += ["", "## Definiciones y advertencias", "",
            "- **Fuentes:** Detalle de inversiones, Inversiones y brechas y Formato 12-B (MEF, Datos Abiertos). El diccionario del MEF da error 404: "
            "el significado de algunas columnas (programación mensual del 12-B, `PMI_ANIO_1` a `4`) se dedujo de su nombre.",
+           "- **Empresas públicas (EsSalud y FONAFE):** no registran su gasto en el SIAF, así que en el Detalle de inversiones su "
+           "devengado y su PIM vienen en 0. Su gasto, su presupuesto 2026 (el modificado si lo reportaron; si no, el inicial) y su "
+           "gasto mensual se toman de lo que reportan a FONAFE (consulta SSI del MEF, Proceso 9): "
+           + "; ".join(f"{k}: {n(v)}" for k, v in ind["fuente_gasto"].value_counts().items())
+           + " inversiones. En las que no tienen dato, la ejecución queda vacía (no 0 %) y no se compara su plan de gasto mensual.",
            "- **P2:** pendiente 2026 = PIM − devengado 2026 (solo inversiones con PIM > 0). Saldo total = `SALDO_EJECUTAR` del MEF.",
            "- **P3:** solo inversiones con monto viable y costo actualizado mayores que 0. Desviación = costo actualizado − monto viable.",
            "- **P4:** reglas de palabras sobre el último texto de problemas del 12-B; son aproximadas y es lo que la entidad reporta. "

@@ -13,9 +13,9 @@
 - No se puede decir qué parte de la brecha cierra cada inversión: el tamaño de la brecha casi nunca está registrado.
 
 ### P2. Presupuesto pendiente de ejecutar
-- **Este año:** 6 851 inversiones tienen presupuesto 2026 (PIM) por S/ 31.1 mil millones; se ha gastado S/ 22.4 mil millones y falta **S/ 8.8 mil millones (28%)**. Certificado: S/ 27.8 mil millones.
-- 2 545 inversiones tienen sin gastar más de la mitad de su presupuesto; 1 210 no han gastado nada.
-- **Toda la vida del proyecto:** saldo por ejecutar de **S/ 700.4 mil millones (75% del costo)**.
+- **Este año:** 7 177 inversiones tienen presupuesto 2026 (PIM) por S/ 32.0 mil millones; se ha gastado S/ 22.7 mil millones y falta **S/ 9.4 mil millones (29%)**. Certificado: S/ 27.8 mil millones.
+- 2 771 inversiones tienen sin gastar más de la mitad de su presupuesto; 1 350 no han gastado nada.
+- **Toda la vida del proyecto:** saldo por ejecutar de **S/ 697.1 mil millones (75% del costo)**.
 
 ### P3. Desviación del costo (costo actualizado frente al monto viable)
 - Subieron: **12 534**; bajaron: 4 456; subieron más de 20 %: **8 601**; más que duplicaron su costo: **3 391**.
@@ -49,25 +49,25 @@
 
 | Grupo | Inversiones | Costo | Saldo por ejecutar |
 |---|---:|---:|---:|
-| Con presupuesto 2026 | 6 851 | S/ 487.9 mil millones | S/ 306.9 mil millones |
-| Programado para 2026, sin presupuesto | 2 008 | S/ 90.6 mil millones | S/ 87.1 mil millones |
-| Programado para 2027 en adelante | 2 366 | S/ 56.8 mil millones | S/ 48.7 mil millones |
-| Sin financiamiento – le falta ejecutar | 11 288 | S/ 264.4 mil millones | S/ 255.5 mil millones |
-| Sin financiamiento – prácticamente terminado | 3 899 | S/ 34.0 mil millones | S/ 2.1 mil millones |
+| Con presupuesto 2026 | 7 177 | S/ 503.5 mil millones | S/ 320.1 mil millones |
+| Programado para 2026, sin presupuesto | 1 740 | S/ 77.1 mil millones | S/ 73.4 mil millones |
+| Programado para 2027 en adelante | 2 353 | S/ 56.5 mil millones | S/ 48.4 mil millones |
+| Sin financiamiento – le falta ejecutar | 11 235 | S/ 262.6 mil millones | S/ 253.2 mil millones |
+| Sin financiamiento – prácticamente terminado | 3 907 | S/ 34.0 mil millones | S/ 2.0 mil millones |
 
-- **Con presupuesto 2026:** 26% de las inversiones y 52% del costo.
-- **Programadas, pero sin presupuesto:** 17% de las inversiones y 16% del costo.
-- **Sin financiamiento ni programación:** 58% de las inversiones y 32% del costo.
+- **Con presupuesto 2026:** 27% de las inversiones y 54% del costo.
+- **Programadas, pero sin presupuesto:** 15% de las inversiones y 14% del costo.
+- **Sin financiamiento ni programación:** 57% de las inversiones y 32% del costo.
 
 ### Avance frente a gasto (aproximación al valor ganado)
 **No se muestra en la app** (decisión del 11/11/2026): el avance es autodeclarado y el 49 % de los proyectos comparables declara un avance igual a lo gastado, así que la comparación no es confiable.
 
 - El avance que usa la app sale de la **declaración de la entidad** en 8 702 proyectos; en el resto, de lo gastado.
-- Comparables en la misma fecha (avance declarado en 2026): **8 566**. En ellos, el avance declarado es **47%** y lo gastado a esa fecha **46%** del costo: por cada sol gastado se declara un avance de **S/ 1.01**.
-- Con lo gastado 30 puntos o más por encima del avance declarado: **145** proyectos.
+- Comparables en la misma fecha (avance declarado en 2026): **8 566**. En ellos, el avance declarado es **47%** y lo gastado a esa fecha **47%** del costo: por cada sol gastado se declara un avance de **S/ 1.00**.
+- Con lo gastado 30 puntos o más por encima del avance declarado: **151** proyectos.
 
 ### P7. Atraso
-- Atrasadas: **6 709**; mediana de **29 meses**; más de 1 año: 4 594; más de 3 años: **2 810**.
+- Atrasadas: **6 135**; mediana de **27 meses**; más de 1 año: 4 100; más de 3 años: **2 394**.
 - Se mide contra la última fecha de fin registrada; el atraso frente al plan original puede ser mayor.
 - Programación 2026 (12-B): de enero a octubre se programó S/ 27.5 mil millones y se gastó S/ 17.5 mil millones (**63%**). 3 704 inversiones gastaron menos del 70 % de lo programado.
 
@@ -76,11 +76,11 @@
 | Ministerio, entidad o gobierno regional | Inversiones | Costo | Con brecha | Falta gastar 2026 | Desviación del costo | Reportan problemas | Con presupuesto 2026 | Atrasadas (mediana) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | Transportes y Comunicaciones | 1 236 | S/ 286.2 mil millones | 67% | 19% | 17% | 573 | 33% | 158 (26 m) |
-| Vivienda, Construccion y Saneamiento | 1 929 | S/ 50.8 mil millones | 59% | 38% | 38% | 589 | 26% | 723 (68 m) |
+| Vivienda, Construccion y Saneamiento | 1 929 | S/ 50.8 mil millones | 59% | 41% | 38% | 589 | 26% | 723 (68 m) |
 | Educacion | 2 374 | S/ 48.9 mil millones | 77% | 30% | 42% | 1 048 | 36% | 549 (33 m) |
 | Economia y Finanzas | 93 | S/ 42.5 mil millones | 97% | 43% | 25% | 71 | 39% | 0 (—) |
 | Gobierno Regional Loreto | 1 142 | S/ 40.5 mil millones | 91% | 22% | 10% | 292 | 16% | 348 (44 m) |
-| Fonafe | 1 139 | S/ 40.4 mil millones | 98% | 23% | 12% | 501 | 0% | 545 (30 m) |
+| Fonafe | 1 139 | S/ 40.4 mil millones | 98% | 59% | 12% | 501 | 26% | 334 (28 m) |
 | Salud | 1 233 | S/ 30.7 mil millones | 93% | 26% | 29% | 593 | 9% | 718 (75 m) |
 | Agricultura y Riego | 1 415 | S/ 29.5 mil millones | 78% | 24% | 62% | 692 | 24% | 226 (22 m) |
 | Presidencia del Consejo de Ministros | 164 | S/ 28.5 mil millones | 66% | 26% | 35% | 78 | 47% | 26 (22 m) |
@@ -101,7 +101,7 @@
 | Gobierno Regional Apurimac | 450 | S/ 8.3 mil millones | 94% | 29% | 31% | 276 | 34% | 111 (10 m) |
 | Gobierno Regional Pasco | 519 | S/ 7.8 mil millones | 96% | 47% | 47% | 282 | 31% | 188 (20 m) |
 | Gobierno Regional Moquegua | 313 | S/ 7.4 mil millones | 96% | 30% | 59% | 203 | 42% | 85 (17 m) |
-| Essalud | 772 | S/ 7.3 mil millones | 51% | sin dato | 7% | 374 | 0% | 379 (51 m) |
+| Essalud | 772 | S/ 7.3 mil millones | 51% | 74% | 7% | 374 | 3% | 16 (27 m) |
 | Justicia | 175 | S/ 7.0 mil millones | 96% | 30% | 52% | 127 | 16% | 24 (28 m) |
 | Gobierno Regional Ica | 258 | S/ 7.0 mil millones | 95% | 26% | 35% | 152 | 12% | 81 (21 m) |
 | Gobierno Regional Huancavelica | 493 | S/ 6.9 mil millones | 93% | 38% | 38% | 257 | 24% | 116 (22 m) |
@@ -142,6 +142,7 @@
 ## Definiciones y advertencias
 
 - **Fuentes:** Detalle de inversiones, Inversiones y brechas y Formato 12-B (MEF, Datos Abiertos). El diccionario del MEF da error 404: el significado de algunas columnas (programación mensual del 12-B, `PMI_ANIO_1` a `4`) se dedujo de su nombre.
+- **Empresas públicas (EsSalud y FONAFE):** no registran su gasto en el SIAF, así que en el Detalle de inversiones su devengado y su PIM vienen en 0. Su gasto, su presupuesto 2026 (el modificado si lo reportaron; si no, el inicial) y su gasto mensual se toman de lo que reportan a FONAFE (consulta SSI del MEF, Proceso 9): SIAF: 24 462; Sin dato: 1 202; FONAFE: 748 inversiones. En las que no tienen dato, la ejecución queda vacía (no 0 %) y no se compara su plan de gasto mensual.
 - **P2:** pendiente 2026 = PIM − devengado 2026 (solo inversiones con PIM > 0). Saldo total = `SALDO_EJECUTAR` del MEF.
 - **P3:** solo inversiones con monto viable y costo actualizado mayores que 0. Desviación = costo actualizado − monto viable.
 - **P4:** reglas de palabras sobre el último texto de problemas del 12-B; son aproximadas y es lo que la entidad reporta. Son problemas actuales, no riesgos con probabilidad e impacto.

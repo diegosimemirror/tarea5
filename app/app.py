@@ -27,6 +27,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 PROCESADO = RAIZ / "data" / "procesado"
 DATOS = PROCESADO / "cinco_preguntas.parquet"
 FECHA_DATOS = "08/11/2026"
+FECHA_EMPRESAS = "19/11/2026"   # cuándo se consultó el gasto de las empresas públicas (Proceso 9)
 
 st.set_page_config(page_title="Cartera de inversiones del Estado", page_icon="🏛️", layout="wide")
 
@@ -131,6 +132,8 @@ NOMBRES = {
 ESTADOS = {
     "Atrasado": ("#d03b3b", "!", 1), "En riesgo este año": ("#c98a00", "▲", 2), "Sin reportes recientes": ("#ec835a", "?", 3),
     "Por cerrar": ("#5b6068", "✓", 4), "Sin presupuesto este año": ("#8a9097", "–", 5), "En marcha": ("#0c8a0c", "●", 6),
+    # Empresas públicas (EsSalud, FONAFE) cuyo gasto no publica el MEF y que no declararon su avance en el último año
+    "Sin datos de avance": ("#6f7680", "○", 7),
 }
 
 st.markdown("""
@@ -210,7 +213,13 @@ def pie_de_pagina():
             "- **Sin reportes recientes:** ya empezó, pero su último reporte de avance (formato 12-B) tiene más de 180 días.\n"
             "- **Por cerrar:** está prácticamente terminado (95 % o más) y falta el cierre formal.\n"
             "- **Sin presupuesto este año:** está aprobado, no ha empezado y no tiene presupuesto en 2026.\n"
-            "- **En marcha:** ninguna de las anteriores.\n\n"
+            "- **En marcha:** ninguna de las anteriores.\n"
+            "- **Sin datos de avance:** es una empresa pública (EsSalud o una empresa de FONAFE), el MEF no publica su gasto "
+            "y la entidad no declaró su avance en el último año.\n\n"
+            "**EsSalud y las empresas de FONAFE** no registran su gasto en el sistema de presupuesto público (SIAF). Su gasto "
+            "y su presupuesto 2026 son los que reportan a FONAFE, tomados de la consulta SSI del MEF; llegan hasta un mes "
+            "anterior (por lo general, septiembre de 2026). Si el MEF no tiene ese reporte, la ejecución aparece como «sin dato» "
+            "y no como 0 %.\n\n"
             "**Tipo de inversión:** proyecto de inversión (incluye los proyectos del antiguo SNIP), IOARR (optimización, "
             "ampliación marginal, reposición y rehabilitación), IRI (intervenciones de la Reconstrucción con Cambios) y "
             "programas y otros.\n\n"
@@ -234,7 +243,8 @@ def pie_de_pagina():
             "obras. La causa es la que registra la Contraloría. Es independiente del estado de arriba, que sale de las fechas "
             "y montos que la entidad registra en el MEF.")
     st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}. "
-               f"Obras paralizadas: {FUENTE_CONTRALORIA}, con corte al {FECHA_CONTRALORIA}.")
+               f"Gasto de EsSalud y de las empresas de FONAFE: MEF, consulta SSI (información financiera de empresas públicas), "
+               f"consultada el {FECHA_EMPRESAS}. Obras paralizadas: {FUENTE_CONTRALORIA}, con corte al {FECHA_CONTRALORIA}.")
 
 def tarjeta(columna, pregunta, cifra, rotulo, lineas=()):
     """Una tarjeta de lectura rápida: la pregunta, una cifra grande con una etiqueta corta, y hasta 3 líneas que
@@ -675,13 +685,29 @@ def ficha(fila):
         return (f'<span>{etiqueta}</span><span class="pista" title="{etiqueta}: {cifra} %">'
                 f'<i style="width:{min(max(valor, 0), 100):.0f}%"></i></span><span>{cifra} % · {detalle_monto}</span>')
     pim, dev_anio, dev_vida, costo = fila["pim_2026"], fila["dev_2026"], fila["dev_acumulado"], fila["costo"]
-    partes = [
-        barra("Ejecución presupuestal 2026", 100 * dev_anio / pim, f"{millones(dev_anio)} de {millones(pim)}")
-        if pd.notna(pim) and pim > 0 else barra("Ejecución presupuestal 2026", float("nan"), "no tiene presupuesto 2026"),
-        barra("Ejecución acumulada (toda su vida)", 100 * dev_vida / costo if costo else float("nan"),
-              f"{millones(dev_vida)} de {millones(costo)}"),
-    ]
-    detalle_ejecucion = f'<div class="avance">{"".join(partes)}</div>'
+    fuente = fila.get("fuente_gasto", "SIAF")     # SIAF, FONAFE o Sin dato (Proceso 4, paso 4.0)
+    if fuente == "Sin dato":
+        # Empresa pública cuyo gasto no publica el MEF: barras sin valor (antes: 0 %, como si no hubiera gastado) y, si la
+        # entidad declaró su avance alguna vez, ese avance con su fecha, porque es el único dato que hay
+        partes = [barra("Ejecución presupuestal 2026", float("nan"), "sin dato"),
+                  barra("Ejecución acumulada (toda su vida)", float("nan"), "sin dato")]
+        if pd.notna(fila.get("avance_ejecucion")) and fila["avance_ejecucion"] > 0 and pd.notna(fila.get("fecha_declaracion")):
+            partes.append(barra(f"Avance que declara la entidad ({fila['fecha_declaracion']:%d/%m/%Y})",
+                                fila["avance_ejecucion"], "toda la inversión"))
+        nota = ("Es una empresa pública: no registra su gasto en el sistema de presupuesto público (SIAF) y el MEF no "
+                "publica su reporte a FONAFE para esta inversión.")
+    else:
+        inicial = " (presupuesto inicial)" if str(fila.get("presupuesto_2026_tipo", "")).startswith("inicial") else ""
+        partes = [
+            barra("Ejecución presupuestal 2026", 100 * dev_anio / pim, f"{millones(dev_anio)} de {millones(pim)}{inicial}")
+            if pd.notna(pim) and pim > 0 else barra("Ejecución presupuestal 2026", float("nan"), "no tiene presupuesto 2026"),
+            barra("Ejecución acumulada (toda su vida)", 100 * dev_vida / costo if costo else float("nan"),
+                  f"{millones(dev_vida)} de {millones(costo)}"),
+        ]
+        nota = (f"Gasto que la entidad reportó a FONAFE, hasta {fila['corte_gasto']}: EsSalud y las empresas públicas no "
+                "registran su gasto en el sistema de presupuesto público (SIAF)." if fuente == "FONAFE" else "")
+    detalle_ejecucion = (f'<div class="avance">{"".join(partes)}</div>'
+                         + (f'<p class="nota">{html.escape(nota)}</p>' if nota else ""))
 
     preguntas = [("¿Qué es?", f'{fila["que_es"]}. {fila["tipo_simple"]} en {fila["lugar"]}.', ""),
                  ("¿Qué problema resuelve?", fila["problema"], detalle_brecha),
@@ -704,12 +730,22 @@ def ficha(fila):
     if fila["cui"]:
         st.link_button("Ver el detalle técnico en el MEF ↗", f'https://ofi5.mef.gob.pe/ssi/Ssi/Index?codigo={fila["cui"]}&tipo=2')
     with st.expander("Para especialistas (términos de Invierte.pe)"):
+        # Presupuesto y gasto: del SIAF (PIM y devengado) o, en las empresas públicas, de su reporte a FONAFE
+        if fuente == "FONAFE":
+            linea_gasto = (f"- **Presupuesto 2026 reportado a FONAFE ({fila['presupuesto_2026_tipo'] or 'sin dato'}):** "
+                           f"{millones(fila['pim_2026'])} · **Ejecutado 2026 (hasta {fila['corte_gasto']}):** "
+                           f"{millones(fila['dev_2026'])} · **Ejecutado acumulado:** {millones(fila['dev_acumulado'])} "
+                           "(consulta SSI del MEF, información financiera de empresas públicas)\n")
+        elif fuente == "Sin dato":
+            linea_gasto = "- **PIM y devengado:** no se registran en el SIAF (empresa pública) y el MEF no publica su reporte a FONAFE\n"
+        else:
+            linea_gasto = f"- **PIM 2026:** {millones(fila['pim_2026'])} · **Devengado 2026:** {millones(fila['dev_2026'])}\n"
         st.markdown(
             f"- **Nombre oficial:** {fila['nombre']}\n"
             f"- **CUI:** {fila['id']} · **Nivel:** {fila['nivel']} · **Pliego:** {fila['entidad']}\n"
             f"- **Unidad ejecutora:** {fila['unidad']} · **Tipo (MEF):** {fila['tipo']}\n"
             f"- **UEI:** {fila['uei'] or 'sin dato'} · **OPMI:** {fila['opmi'] or 'sin dato'}\n"
-            f"- **PIM 2026:** {millones(fila['pim_2026'])} · **Devengado 2026:** {millones(fila['dev_2026'])}\n"
+            + linea_gasto +
             f"- **Modalidad:** {fila['modalidad'] or 'sin dato'} · **Registrada en el PMI:** {fila['en_pmi']}\n"
             f"- **Brecha (texto del MEF):** {fila['brecha'] or 'sin dato'}")
         # Avance que declara la entidad (12-B) frente a lo gastado: aproximación al valor ganado
@@ -719,8 +755,10 @@ def ficha(fila):
                         f"{fila['avance_ejecucion']:.0f} %{fisico}.")
         else:
             st.markdown("**Avance que declara la entidad:** no lo ha declarado.")
-        st.markdown("Para su estado se usa el avance que declaró la entidad." if fila.get("avance_fuente") == "declarado por la entidad"
-                    else "Para su estado se usa lo gastado, porque la entidad no declaró su avance en el último año.")
+        st.markdown({"declarado por la entidad": "Para su estado se usa el avance que declaró la entidad.",
+                     "sin dato": "Para su estado no hay avance ni gasto: la entidad no declaró su avance en el último año y "
+                                 "el MEF no publica su gasto."}.get(
+                    fila.get("avance_fuente"), "Para su estado se usa lo gastado, porque la entidad no declaró su avance en el último año."))
         if pd.notna(fila["fecha_12b"]):
             st.markdown(f"**Último 12-B ({fila['fecha_12b']:%d/%m/%Y})**")
             for etq, col in [("Situación", "situacion_12b"), ("Problemas", "problema_12b"), ("Acciones", "acciones_12b")]:
@@ -776,7 +814,8 @@ editada = st.data_editor(
         "Ejecución 2026": st.column_config.ProgressColumn("Ejecución 2026", min_value=0, max_value=100, format="%.0f%%",
                                                           help="Lo gastado en 2026 frente a su presupuesto 2026", width=115),
         "Ejecución acumulada": st.column_config.ProgressColumn("Ejecución acumulada", min_value=0, max_value=100, format="%.0f%%",
-                                                               help="Lo gastado en toda su vida frente a su costo", width=125),
+                                                               help="Lo gastado en toda su vida frente a su costo. Vacío si el MEF no publica "
+                                                                    "su gasto (algunas inversiones de EsSalud y FONAFE)", width=125),
         "Atraso (meses)": st.column_config.NumberColumn("Atraso (meses)", format="%d", width=95),
     })
 st.caption(plural(len(vista), "proyecto")
@@ -826,13 +865,14 @@ def comparar(grupos):
     columnas = {}
     for letra, g in grupos.items():
         r, n = resumen(g), len(g)
+        con_gasto = g[g["fuente_gasto"] != "Sin dato"]   # sin las empresas públicas cuyo gasto no publica el MEF
         cuota = lambda k: f"{int(k):,} ({porc(k / n)})" if n else "0"
         cambio = r["pct_desv_total"]
         columnas[f"{letra} · {st.session_state[f'nombre_{letra}']}"] = [
             f"{n:,}", millones(r["costo"]),
             millones(r["pim_2026"]) if r["pim_2026"] > 0 else "sin presupuesto 2026",
             porc(proporcion(r["dev_2026"], r["pim_2026"])),
-            porc(proporcion(g["dev_acumulado"].sum(), r["costo"])),
+            porc(proporcion(con_gasto["dev_acumulado"].sum(), con_gasto["costo"].sum())),
             f"{'+' if cambio >= 0 else '−'}{abs(100 * cambio):.0f} %" if pd.notna(cambio) else "sin dato",
             cuota(r["n_atrasados"]),
             meses(r["mediana_meses_atraso"]) if pd.notna(r["mediana_meses_atraso"]) else "—",

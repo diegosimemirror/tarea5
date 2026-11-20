@@ -22,7 +22,9 @@ uv run --with-requirements requirements.txt python scripts/probar_app.py # prueb
 Sin `uv`, se puede usar `pip install -r requirements.txt` y después `streamlit run app/app.py`.
 
 - Los archivos procesados vienen en `data/procesado/`, así que la app corre sin descargar nada.
-- Para rehacer la base: `scripts/01_descargar.py` (baja ≈ 512 MB a `data/crudo/`, que no se sube), luego `03_preparar.py` y `04_traducir.py`.
+- Para rehacer la base: `scripts/01_descargar.py` (baja ≈ 512 MB a `data/crudo/`, que no se sube), luego `03_preparar.py`, `09_gasto_empresas.py` (gasto de EsSalud y FONAFE, que no usan el SIAF; ≈ 12 min) y `04_traducir.py`.
+- **pandas:** los procesados se generan con pandas 2.x (`uv run --with "pandas<3" --with pyarrow python scripts/…`). Con pandas 3, las expresiones regulares del Proceso 7 usan otro motor y 53 textos del 12-B cambian de clase de problema.
+- **Empresas públicas:** EsSalud y FONAFE no registran su gasto en el SIAF. Su gasto viene de su reporte a FONAFE (Proceso 9); si no hay reporte, la ejecución es «sin dato», nunca 0 %.
 
 ## Dónde está cada cosa
 

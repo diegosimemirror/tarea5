@@ -54,6 +54,7 @@ Busco facilitar la comunicación de información densa para la toma de decisione
   pip install -r requirements.txt
   python scripts/01_descargar.py      # baja los datos del MEF (≈ 537 MB)
   python scripts/03_preparar.py       # arma la base del gobierno nacional y los gobiernos regionales
+  python scripts/09_gasto_empresas.py # gasto de EsSalud y FONAFE (no usan el SIAF), ≈ 12 min la primera vez
   python scripts/04_traducir.py       # cinco preguntas en lenguaje simple
   python scripts/07_indicadores.py    # indicadores de cartera
   python scripts/08_contraloria.py    # obras paralizadas según la Contraloría

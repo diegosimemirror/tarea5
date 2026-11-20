@@ -91,3 +91,27 @@ Ninguna fila se eliminó: el gobierno nacional entra completo, con sus 12 731 in
 **El estado de la app y la Contraloría miden cosas distintas:** de los 519 proyectos con obras paralizadas, 175 figuran "En marcha" con las reglas de la app, que solo usan fechas y montos del MEF. Por eso la ficha muestra la información de la Contraloría en un recuadro aparte, con su fuente y su fecha, sin cambiar el estado.
 
 **Ningún dato se modificó ni se eliminó:** el anexo se guarda tal cual en `data/contraloria/`.
+
+## 8. Gasto de las empresas públicas: EsSalud y FONAFE (Proceso 9, 19/11/2026)
+
+**Hallazgo:** EsSalud y las empresas de FONAFE no registran su gasto en el SIAF. En el Detalle de inversiones del MEF, su devengado y su PIM vienen en 0, aunque la obra esté casi terminada. La app mostraba 0 % de ejecución y estados como «no ha empezado». Ejemplo: el Hospital del Altiplano de Puno (CUI 2300016) declara 93,94 % de avance en el 12-B y, según su reporte a FONAFE, ha gastado S/ 366,6 millones de S/ 385,0 millones (95 %). En la app figuraba con 0 % y «Sin presupuesto este año».
+
+**Fuente nueva:** la consulta SSI del MEF tiene una sección aparte, «I. Información financiera – Empresas públicas», que se alimenta del servicio público `invierteWS/Ssi/traeFonafeSSI` (una consulta por CUI). No está en el portal de Datos Abiertos. El Proceso 9 la consulta para las 1 944 inversiones de empresas públicas sin gasto ni presupuesto en el SIAF (sector EsSalud o FONAFE, más SEDAPAL, CORPAC, EGASA y Electro Sur Este en otros sectores). Las 13 que sí tienen gasto en el SIAF no se tocan.
+
+| # | Qué se revisó | Qué se encontró | Qué se hizo |
+|---|---|---|---|
+| 1 | Cobertura | 748 de 1 944 tienen reporte a FONAFE; 1 196 no. En EsSalud, 74 de 772: casi todas las que faltan (696) son IOARR de compra de equipos | Con reporte: se usa su gasto. Sin reporte: «Sin dato» (no 0 %) |
+| 2 | Mes de corte | El último reporte llega a septiembre de 2026 en 378 inversiones; en el resto, a diciembre de un año anterior (2025: 118; 2024: 133; …) | Se guarda el mes de corte y se muestra en la ficha |
+| 3 | Meses del año | El año en curso trae montos en octubre a diciembre que no son gasto (el mes reportado es septiembre) | Solo se suman los meses hasta el mes reportado; se verifica que el gasto 2026 sea igual a la suma de sus meses |
+| 4 | Presupuesto 2026 | Ninguna trae PIM 2026; 326 traen PIA 2026 | Presupuesto 2026 = PIM si lo hay; si no, el PIA (se indica «presupuesto inicial») |
+| 5 | Varias filas | 5 inversiones devuelven más de una fila | Se suman, como hace la página del SSI |
+| 6 | Valores imposibles | 4 inversiones (2513625, 2522048, 2652824 y 2674874, empresas eléctricas) tienen un acumulado menor que lo gastado en 2026 | Acumulado = lo gastado en 2026 (el mínimo posible); el valor original queda en `gasto_acumulado_original` |
+| 7 | Plan de gasto mensual | En las empresas, la programación del 12-B (ene–oct) no se puede comparar con su gasto (llega hasta otro mes) | No se calcula el «plan de gasto» en las 1 950 inversiones de empresas sin SIAF |
+
+**Registros afectados (Proceso 4, paso 4.0):** de 26 412 inversiones, 24 462 siguen con el gasto del SIAF, 748 toman el de FONAFE (S/ 3,5 mil millones gastados; S/ 39,2 mil millones de costo) y 1 202 quedan «Sin dato» (S/ 12,7 mil millones de costo; incluye 6 sin CUI). Cambian de estado 1 519:
+
+- **Empresas con dato de FONAFE (748):** de las 309 que figuraban «Sin presupuesto este año» (no ha empezado), 83 pasan a «En marcha», 130 a «En riesgo este año», 45 a «Sin reportes recientes» y 3 a «Por cerrar» (48 siguen igual); 10 atrasadas pasan a «Por cerrar» (ya gastaron 95 % o más) y 10 que estaban «Por cerrar» pasan a «En riesgo este año» (tienen presupuesto 2026 y gastaron menos de la mitad).
+- **Empresas sin dato (1 202):** 1 103 pasan al estado nuevo **«Sin datos de avance»** (antes, 564 figuraban «Atrasado… con 0 % de avance» y 539 «no ha empezado»). Las 99 que declararon su avance en el último año usan ese avance.
+- **Resto (SIAF), 80 inversiones:** pasan de «Sin presupuesto este año» a «En marcha» (70) o «Sin reportes recientes» (10). Corrección de la regla: «empezado» ahora también cuenta el avance declarado, no solo el gasto. Antes, un Tambo con 83 % de avance declarado figuraba como «no ha empezado».
+
+**Lo que no se cambió:** el avance que declara la entidad sigue en «Para especialistas» (decisión del 11/11/2026), salvo en las inversiones «Sin dato», donde es el único dato y se muestra en «¿Cuánto se ha ejecutado?».

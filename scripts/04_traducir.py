@@ -25,6 +25,47 @@ base = pd.read_parquet(PROCESADO / "inversiones.parquet")
 base["id"] = base["id"] + base.groupby("id").cumcount().map(lambda n: "" if n == 0 else f"-{n + 1}")
 
 # ============================================================
+# PASO 4.0: Completar el gasto de las empresas públicas con lo que reportan a FONAFE (Proceso 9)
+#   EsSalud y las empresas de FONAFE no registran su gasto en el SIAF: en el Detalle de inversiones del MEF su gasto y su
+#   presupuesto vienen en 0, aunque la obra esté casi terminada. El Proceso 9 trae lo que reportan a FONAFE (la misma
+#   cifra que muestra la consulta SSI del MEF). Solo se completan las inversiones sin gasto ni presupuesto en el SIAF.
+#   fuente_gasto: "SIAF" (la gran mayoría), "FONAFE" (empresa pública con dato) o "Sin dato" (empresa pública sin dato en
+#                 FONAFE: su 0 no quiere decir que no haya gastado, sino que el MEF no publica su gasto)
+#   El plan de gasto mensual del 12-B (programado ene–oct) no se compara en las empresas: su gasto llega hasta otro mes.
+#   Antes (CUI 2300016): gastado 0, presupuesto 2026 0
+#   Después: gastado S/ 366.6 millones hasta septiembre de 2026, presupuesto 2026 S/ 84.2 millones (inicial)
+# ============================================================
+GASTO_EMPRESAS = PROCESADO / "gasto_empresas.parquet"
+base["fuente_gasto"], base["corte_gasto"], base["presupuesto_2026_tipo"] = "SIAF", "", ""
+if GASTO_EMPRESAS.exists():
+    empresas = pd.read_parquet(GASTO_EMPRESAS)
+    # Empresas públicas (mismo criterio del Proceso 9) sin gasto ni presupuesto en el SIAF: se consultaron o no tienen CUI
+    es_empresa = (base["sector"].isin(["ESSALUD", "FONAFE"])
+                  | base["entidad"].str.contains(r"S\.A|EMPRESA|SEDAPAL|S\.R\.L", regex=True))
+    sin_siaf = (base["dev_acumulado"].fillna(0) == 0) & (base["pim_2026"].fillna(0) == 0)
+    base.loc[es_empresa & sin_siaf, "fuente_gasto"] = "Sin dato"
+    con_dato = empresas[empresas["con_dato"]].set_index("cui")
+    fonafe = es_empresa & sin_siaf & base["cui"].isin(con_dato.index)
+    dato = con_dato.loc[base.loc[fonafe, "cui"]].set_axis(base.index[fonafe])   # una fila de FONAFE por cada inversión
+    base.loc[fonafe, "fuente_gasto"] = "FONAFE"
+    base.loc[fonafe, "dev_acumulado"] = dato["gasto_acumulado"]
+    base.loc[fonafe, "dev_2026"] = dato["gasto_2026"]
+    base.loc[fonafe, "dev_hasta_2025"] = dato["gasto_acumulado"] - dato["gasto_2026"]
+    base.loc[fonafe, "pim_2026"] = dato["presupuesto_2026"]
+    base.loc[fonafe, "presupuesto_2026_tipo"] = dato["presupuesto_2026_tipo"]
+    # Saldo por ejecutar: costo menos lo gastado (aproximación; el saldo del MEF, sin el gasto de FONAFE, era el costo entero)
+    base.loc[fonafe, "saldo"] = (base.loc[fonafe, "costo"] - dato["gasto_acumulado"]).clip(lower=0)
+    for m in range(1, 12):
+        base.loc[fonafe, f"dev_2026_{m:02d}"] = dato[f"gasto_2026_{m:02d}"]
+    # Mes hasta el que llega el dato. Antes: anio_corte = 2026, mes_corte = 9 | Después: "septiembre de 2026"
+    base.loc[fonafe, "corte_gasto"] = [f"{MESES[int(m) - 1]} de {int(a)}" for a, m in zip(dato["anio_corte"], dato["mes_corte"])]
+    base.loc[base["fuente_gasto"] != "SIAF", ["programado_ene_oct", "reprogramado_ene_oct", "devengado_ene_oct"]] = float("nan")
+print("4.0 Fuente del gasto:", base["fuente_gasto"].value_counts().to_dict())
+_e = base[base["cui"] == "2300016"]
+if len(_e):
+    print("    2300016:", _e.iloc[0][["fuente_gasto", "dev_acumulado", "dev_2026", "pim_2026", "corte_gasto"]].to_dict())
+
+# ============================================================
 # PASO 4.1: Ayudas de redacción
 # ============================================================
 SIGLAS = ["CIAI", "ULE", "MIDIS", "SINAFO", "PNCM", "FONCODES", "PAIS", "PGH", "I.E.", "IE", "EsSalud", "MINSA", "MTC", "SUNAT",
@@ -137,7 +178,11 @@ def problema(f):
 def cuanto(f):
     costo, gastado = f["costo"], f["dev_acumulado"]
     pct = (100 * gastado / costo) if costo and costo > 0 else None
-    if pct is None:
+    if f["fuente_gasto"] == "Sin dato":           # empresa pública sin gasto publicado: no se sabe cuánto gastó
+        gasto = "El MEF no publica su gasto."
+    elif f["fuente_gasto"] == "FONAFE" and pct is not None and gastado:
+        gasto = f"Se ha gastado {millones(gastado)} ({pct:.0f} %), según su reporte a FONAFE hasta {f['corte_gasto']}."
+    elif pct is None:
         gasto = ""
     elif not gastado:
         gasto = "Aún no se ha gastado nada."
@@ -152,6 +197,8 @@ def cuanto(f):
 # Ahora:
 #   1) el avance de ejecución que la entidad declaró en el último año (todos los componentes), si es mayor que 0;
 #   2) si no hay una declaración reciente, el % gastado del costo (devengado / costo), como aproximación.
+#   3) en las empresas públicas sin gasto publicado (fuente_gasto = "Sin dato"), sin declaración reciente: faltante.
+#      Antes: 0 % (se leía como "no ha empezado") | Después: sin dato
 DECLARACION_RECIENTE = HOY - pd.DateOffset(years=1)
 
 def avance_declarado(f):
@@ -162,11 +209,15 @@ def avance_declarado(f):
 def avance(f):
     if avance_declarado(f):
         return f["avance_ejecucion"]
+    if f["fuente_gasto"] == "Sin dato":
+        return float("nan")
     gastado = 100 * f["dev_acumulado"] / f["costo"] if f["costo"] and f["costo"] > 0 else 0
     return min(gastado, 100)
 
 def avance_fuente(f):
-    return "declarado por la entidad" if avance_declarado(f) else "según lo gastado"
+    if avance_declarado(f):
+        return "declarado por la entidad"
+    return "sin dato" if f["fuente_gasto"] == "Sin dato" else "según lo gastado"
 
 # ============================================================
 # PASO 4.5: ¿Cuándo termina?  (periodo de ejecución + cómo está respecto de su fecha de fin)
@@ -203,18 +254,25 @@ def situacion_plazo(f):
 
 # ============================================================
 # PASO 4.6: ¿Cómo va?  (un estado en palabras simples y su motivo)
-#   Orden de prioridad: Atrasado > En riesgo este año > Sin reportes recientes > Por cerrar > Sin presupuesto este año > En marcha
+#   Orden de prioridad: Sin datos de avance > Atrasado > En riesgo este año > Sin reportes recientes > Por cerrar >
+#   Sin presupuesto este año > En marcha. "Sin datos de avance" solo aparece en empresas públicas sin gasto publicado.
 #   Reglas de ejemplo, por validar con el usuario.
 # ============================================================
 DIAS_AL_CIERRE = (CIERRE_ANIO - HOY).days
 
 def estado(f):
     av, fin, pim, dev26 = avance(f), f["fin"], f["pim_2026"] or 0, f["dev_2026"] or 0
-    empezado = (f["dev_acumulado"] or 0) > 0
+    # Empezado: ya gastó algo o la entidad declara avance. Antes solo contaba el gasto: un proyecto con 94 % de avance
+    # declarado y sin gasto en el SIAF (EsSalud) quedaba como "no ha empezado".
+    empezado = (f["dev_acumulado"] or 0) > 0 or (pd.notna(f["avance_ejecucion"]) and f["avance_ejecucion"] > 0)
+    if pd.isna(av):                                # empresa pública sin gasto publicado ni avance declarado reciente
+        vencio = f" Su plazo venció en {mes_anio(fin)}." if pd.notna(fin) and fin < HOY else ""
+        return "Sin datos de avance", f"Es una empresa pública: el MEF no publica su gasto y no ha declarado su avance en el último año.{vencio}"
     if pd.notna(fin) and fin < HOY and av < 95:
         return "Atrasado", f"Su plazo venció en {mes_anio(fin)} y tiene {av:.0f} % de avance."
     if pim > 0 and dev26 / pim < 0.5:
-        return "En riesgo este año", f"Le faltan {millones(pim - dev26)} por gastar de su presupuesto 2026 en {DIAS_AL_CIERRE} días."
+        corte = f" (su gasto reportado a FONAFE llega hasta {f['corte_gasto']})" if f["fuente_gasto"] == "FONAFE" else ""
+        return "En riesgo este año", f"Le faltan {millones(pim - dev26)} por gastar de su presupuesto 2026 en {DIAS_AL_CIERRE} días{corte}."
     if empezado and av < 95 and (pd.isna(f["fecha_12b"]) or (HOY - f["fecha_12b"]).days > 180):
         cuando_ = f"desde {mes_anio(f['fecha_12b'])}" if pd.notna(f["fecha_12b"]) else "nunca"
         return "Sin reportes recientes", f"Está en marcha, pero la entidad no informa su avance {cuando_}."

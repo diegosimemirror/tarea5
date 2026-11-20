@@ -8,6 +8,7 @@
 # streamlit.testing: ejecuta la app como si fuera un navegador y permite "hacer clic" desde el código
 from pathlib import Path
 import io
+import re   # re: leer las cifras de ejecución en el HTML de la ficha
 import sys
 import pandas as pd   # pandas: leer las obras paralizadas y los proyectos para elegir casos de prueba
 from streamlit.testing.v1 import AppTest
@@ -151,6 +152,19 @@ archivo = a_csv(*ida, proyectos)
 con_punto_y_coma = pd.read_csv(io.BytesIO(archivo), dtype=str).to_csv(index=False, sep=";").encode("utf-8")
 print("13. Archivo CSV — ida y vuelta igual:", leer_csv(archivo) == ida, "| con «;» (Excel):", leer_csv(con_punto_y_coma) == ida,
       "| tamaño:", len(archivo), "bytes")
+
+# Empresas públicas (Proceso 9): el Hospital del Altiplano de EsSalud (2300016) muestra su gasto reportado a FONAFE, no 0 %;
+# una inversión de EsSalud sin reporte a FONAFE (2547586) muestra "sin dato" y el estado "Sin datos de avance"
+for cui, esperado in (("2300016", "reportó a FONAFE"), ("2547586", "no publica su reporte a FONAFE")):
+    f = AppTest.from_file(APP, default_timeout=180)
+    f.query_params["ficha"] = cui
+    f.run()
+    ejecucion = next((m.value for m in f.markdown if "¿Cuánto se ha ejecutado?" in m.value), "")
+    cifras = re.findall(r"(\d+(?:,\d)?) % · ", ejecucion)
+    print(f"14. Ficha {cui} (empresa pública) — errores:", len(f.exception), "| nota de la fuente:", esperado in ejecucion,
+          "| cifras de ejecución:", cifras or "sin dato",
+          "| estado:", next((m.value.split("</p>")[1][:60] for m in f.markdown if "¿Cómo va?" in m.value), "-"))
+    pruebas.append(f)
 
 for prueba in pruebas:
     for e in prueba.exception:
