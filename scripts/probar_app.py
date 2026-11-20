@@ -213,6 +213,23 @@ print("18. Ficha 2538136 (EsSalud, pandemia) — errores:", len(f.exception), "|
       "| ¿Qué incluye?:", "¿Qué incluye?" in texto_ficha, "| ¿En qué fase está?:", "¿En qué fase está?" in texto_ficha)
 pruebas.append(f)
 
+# Marcador de departamentos: Lima y Callao dejan en la lista solo sus proyectos (sin las ya ejecutadas, ocultas por defecto);
+# al cambiar una lista de arriba, lo marcado se mantiene
+dep = AppTest.from_file(APP, default_timeout=180)
+dep.run()
+base = pd.read_parquet(RAIZ / "data" / "procesado" / "cinco_preguntas.parquet", columns=["departamento", "ya_ejecutada"])
+esperado = int((base["departamento"].isin(["LIMA", "CALLAO"]) & ~base["ya_ejecutada"]).sum())
+dep.multiselect[0].select("Lima").select("Callao").run()
+proyectos_lista = lambda: [m.value for m in dep.metric if m.label == "Proyectos"][-1]   # la cifra junto al buscador
+t = lista_de(dep)
+print("19. Departamentos Lima y Callao — errores:", len(dep.exception), "| proyectos en la lista:", proyectos_lista(),
+      "| esperados:", f"{esperado:,}", "| todas las filas en Lima o Callao:", bool(t["Lugar"].str.contains(r"(?:^|, )(?:Lima|Callao)$").all()),
+      "| opciones:", dep.multiselect[0].options[:3])
+dep.selectbox[NIVEL].select("Gobierno regional").run()
+print("    Con «Gobiernos regionales» — errores:", len(dep.exception), "| marcados:", dep.multiselect[0].value,
+      "| proyectos en la lista:", proyectos_lista())
+pruebas.append(dep)
+
 for prueba in pruebas:
     for e in prueba.exception:
         print("ERROR:", e.value)

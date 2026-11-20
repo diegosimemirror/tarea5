@@ -48,7 +48,7 @@ st.set_page_config(page_title="Cartera de inversiones del Estado", page_icon="�
 # Columnas que la página no usa (las usan los procesos): no se cargan. La más pesada es la descripción técnica
 # (alternativa, ≈ 15 MB). Antes: 166 columnas, ≈ 107 MB | Después: ≈ 107 columnas, ≈ 71 MB.
 # Si la app empieza a usar una de ellas, hay que quitarla de esta lista.
-NO_SE_USAN = ["snip", "sector", "situacion", "marco", "funcion", "departamento", "provincia", "distrito", "uf", "alternativa",
+NO_SE_USAN = ["snip", "sector", "situacion", "marco", "funcion", "provincia", "distrito", "uf", "alternativa",
               "informe_cierre", "tiene_12b", "tiene_f8", "tiene_f9", "tipologia", "ctrl", "dev_hasta_2025", "saldo",
               "avance_fisico_original", "beneficiarios", "beneficiarios_original", "fecha_viable", "brecha_servicio",
               "brecha_unidad", "brecha_aporte", "n_brechas", "monto_et", "fianza", "inicio_fisico", "fin_fisico",
@@ -56,7 +56,16 @@ NO_SE_USAN = ["snip", "sector", "situacion", "marco", "funcion", "departamento",
               "sit_categoria", "cuanto", "motivo_sin_brecha", "desv_diseno", "desv_ejecucion", "rango_desviacion",
               "programado_pmi_2026", "programado_pmi_desde_2027", "meses_desde_fin", "rango_atraso", "rango_programacion",
               "pct_gastado_a_la_declaracion", "diferencia_gasto_avance", "frase_indice", "frase_alerta"]
-IA = RAIZ / "data" / "procesado" / "ia_titulos.parquet"
+# Departamentos para el marcador de la lista de proyectos, en orden alfabético y con tildes
+#   Antes: 'JUNIN', '-MUL.DEP-' o vacío (como los publica el MEF) | Después: 'Junín', 'Varios departamentos' o 'Sin dato'
+DEPARTAMENTOS = {"AMAZONAS": "Amazonas", "ANCASH": "Áncash", "APURIMAC": "Apurímac", "AREQUIPA": "Arequipa",
+                 "AYACUCHO": "Ayacucho", "CAJAMARCA": "Cajamarca", "CALLAO": "Callao", "CUSCO": "Cusco",
+                 "HUANCAVELICA": "Huancavelica", "HUANUCO": "Huánuco", "ICA": "Ica", "JUNIN": "Junín",
+                 "LA LIBERTAD": "La Libertad", "LAMBAYEQUE": "Lambayeque", "LIMA": "Lima", "LORETO": "Loreto",
+                 "MADRE DE DIOS": "Madre de Dios", "MOQUEGUA": "Moquegua", "PASCO": "Pasco", "PIURA": "Piura",
+                 "PUNO": "Puno", "SAN MARTIN": "San Martín", "TACNA": "Tacna", "TUMBES": "Tumbes", "UCAYALI": "Ucayali",
+                 "-MUL.DEP-": "Varios departamentos", "": "Sin dato"}
+IA =RAIZ / "data" / "procesado" / "ia_titulos.parquet"
 # Obras paralizadas según la Contraloría (Proceso 8): una fila por obra, unida a su proyecto por el CUI
 CONTRALORIA = PROCESADO / "contraloria_paralizadas.parquet"
 FUENTE_CONTRALORIA = ("Contraloría General de la República, Informe de obras paralizadas en el territorio nacional a junio "
@@ -104,6 +113,9 @@ def cargar(marca):
     #   Antes: la búsqueda solo leía el título y el lugar | Después: también el nombre oficial y la unidad ejecutora
     tabla["_busqueda"] = (tabla["que_es"].fillna("") + " " + tabla["nombre"].fillna("") + " " + tabla["lugar"].fillna("")
                           + " " + tabla["unidad"].fillna("") + " " + tabla["id"].astype(str)).map(sin_tildes)
+    # Departamento con su nombre para mostrar (marcador de la lista de proyectos)
+    #   Antes: 'SAN MARTIN' | Después: 'San Martín'; uno que no esté en la lista queda con mayúscula inicial
+    tabla["departamento"] = [DEPARTAMENTOS.get(d, d.title()) for d in tabla["departamento"].fillna("").str.strip()]
     # Marca de obra paralizada según la Contraloría (Proceso 8), para la ficha y para comparar portafolios
     #   Antes: sin la columna | Después: True en los proyectos con al menos una obra en el anexo de la Contraloría
     tabla["paralizada_cgr"] = tabla["id"].isin(pd.read_parquet(CONTRALORIA)["id"]) if CONTRALORIA.exists() else False
@@ -679,6 +691,20 @@ ORDENES = {"Estado: primero los que requieren atención": (["_orden", "costo"], 
            "Ejecución acumulada: de mayor a menor": (["ejec_acum"], [False]),
            "Ejecución 2026: de menor a mayor": (["ejec_2026"], [True]),
            "Atraso: de mayor a menor": (["meses_atraso"], [False]), "Nombre: de la A a la Z": (["que_es"], [True])}
+# Marcador de departamentos: uno o varios (por ejemplo, Lima y Callao); vacío = todos. Acota la lista, sus cifras, los botones
+#   «Agregar los N de la lista» y el mapa; no cambia el esquema ni los indicadores de arriba.
+#   Antes: todos los proyectos de lo elegido arriba | Después: solo los de los departamentos marcados
+cuenta_dep = seleccion["departamento"].value_counts()
+marcados_antes = st.session_state.get("f_departamentos", [])
+# Opciones: los departamentos con proyectos en lo elegido arriba, más los ya marcados (para no perderlos al cambiar una lista)
+opciones_dep = [d for d in DEPARTAMENTOS.values() if d in cuenta_dep.index or d in marcados_antes]
+d1, d_vacio = st.columns([2.6, 2.2])
+departamentos = d1.multiselect(
+    "Departamento", opciones_dep, key="f_departamentos", placeholder="Todos los departamentos: elige uno o varios",
+    format_func=lambda d: f"{d} ({int(cuenta_dep.get(d, 0)):,})",
+    help="Deja en la lista y en el mapa solo los proyectos de los departamentos marcados (por ejemplo, Lima y Callao). "
+         "Lima incluye Lima Metropolitana y las provincias de Lima. Los proyectos que abarcan más de un departamento "
+         "están en «Varios departamentos». El número es cuántos proyectos hay en cada uno, según lo elegido arriba.")
 b1, b2, f3, f4 = st.columns([1.2, 1.4, 0.6, 1.6])
 busqueda = b1.text_input("Buscar", placeholder="Nombre, lugar, unidad o CUI")
 orden = b2.selectbox("Ordenar por", list(ORDENES))
@@ -694,14 +720,22 @@ def coincide(tabla, palabras):
     return marca
 
 vista = seleccion
-if busqueda.strip():
+if departamentos:
+    vista = vista[vista["departamento"].isin(departamentos)]
+    if vista.empty:
+        st.info(f"Ningún proyecto de lo elegido arriba está en {', '.join(departamentos)}. Quita departamentos del marcador "
+                "o cambia alguna lista a «Todos».")
+if busqueda.strip() and not vista.empty:
     palabras = [p for p in sin_tildes(busqueda).split() if p not in PALABRAS_VACIAS] or sin_tildes(busqueda).split()
     vista = vista[coincide(vista, palabras)]
     if vista.empty:
-        # Si no hay resultados, decir dónde sí está (otra cartera, tipo o estado) o que no es del nacional ni del regional
+        # Si no hay resultados, decir dónde sí está (otro departamento, otra cartera, tipo o estado) o que no es del nacional
+        #   ni del regional
         buscado = html.escape(busqueda.strip())
         en_otros = inversiones[coincide(inversiones, palabras)]["cartera"].value_counts()
-        if len(en_otros):
+        if departamentos and coincide(seleccion, palabras).any():
+            st.info(f"«{buscado}» está en lo elegido arriba, pero no en los departamentos marcados. Para verlo, quítalos del marcador.")
+        elif len(en_otros):
             st.info(f"«{buscado}» no está en esta selección, pero sí en: "
                     + ", ".join(f"{nombre_entidad(s)} ({n:,})" for s, n in en_otros.head(3).items())
                     + ". Para verlos, elige «Todos» en las listas de arriba.")
@@ -949,7 +983,8 @@ tabla.insert(3, "B", mostrar["id"].isin(set(st.session_state["port_B"])))
 # La clave cambia con los filtros y después de abrir cada ficha: así la lista vuelve a mostrarse sin "Ver ficha" marcado
 version = st.session_state.get("version_lista", 0)
 clave_lista = f"lista_{version}_" + str(abs(hash((nivel, cartera_elegida, pliego, unidad, tipo, componentes_elegidos, fase_elegida,
-                                                   presupuesto, mostrar_ejecutadas, estado, len(vista), orden, busqueda,
+                                                   presupuesto, mostrar_ejecutadas, estado, tuple(departamentos),
+                                                   len(vista), orden, busqueda,
                                                    tuple(mostrar["id"].head(3))))))
 editada = st.data_editor(
     tabla, hide_index=True, width="stretch", height=min(38 + 35 * len(tabla), 460), key=clave_lista,
@@ -983,7 +1018,7 @@ editada = st.data_editor(
         "Atraso (meses)": st.column_config.NumberColumn("Atraso (meses)", format="%d", width=95),
     })
 st.caption(plural(len(vista), "proyecto")
-           + (f" (se muestran los primeros {MAX_FILAS:,}: usa las listas o el buscador para acotar)" if len(vista) > MAX_FILAS else "")
+           + (f" (se muestran los primeros {MAX_FILAS:,}: usa las listas, el marcador de departamentos o el buscador para acotar)" if len(vista) > MAX_FILAS else "")
            + ". Marca «Ver ficha» para abrir la ficha de un proyecto, «Ubicar» para resaltarlo en el mapa (al final de la "
            "página), o «A» y «B» para armar tus portafolios y compararlos (debajo de la lista).")
 
