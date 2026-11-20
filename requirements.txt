@@ -1,5 +1,6 @@
 # Paquetes que usa el proyecto (se instalan una sola vez con: pip install -r requirements.txt)
 streamlit>=1.40   # convierte la app de Python en una página web
 pandas>=2.2       # tablas: leer, filtrar, unir y resumir datos
-pyarrow>=15       # leer y guardar archivos parquet (formato liviano para tablas)
+pyarrow>=15,<25   # leer y guardar archivos parquet (formato liviano para tablas); la 26.0.1 tiene un error que cierra
+                  # el programa (apache/arrow#50471, lo detectó Streamlit Cloud el 20/11/2026)
 pydeck>=0.8       # mapa interactivo de los proyectos (viene con Streamlit)
