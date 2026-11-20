@@ -32,6 +32,7 @@ Sin `uv`, se puede usar `pip install -r requirements.txt` y después `streamlit 
 - **pandas:** los procesados se generan con pandas 2.x (`uv run --with "pandas<3" --with pyarrow python scripts/…`). Con pandas 3, las expresiones regulares del Proceso 7 usan otro motor y 53 textos del 12-B cambian de clase de problema.
 - **Empresas públicas:** EsSalud y FONAFE no registran su gasto en el SIAF. Su gasto viene de su reporte a FONAFE (Proceso 9); si no hay reporte, la ejecución es «sin dato», nunca 0 %.
 - **Ya ejecutadas:** no basta el porcentaje del 12-B. El Proceso 10 lee su texto; por ejemplo, 308 inversiones de EsSalud de la pandemia tienen 0 % y su texto dice «ejecutadas». Las ya ejecutadas se ocultan en la app (interruptor) porque no necesitan financiamiento. Toda regla nueva se revisa leyendo los textos distintos que clasifica.
+- **Memoria de la app:** la tabla principal se comparte entre todos los visitantes (`st.cache_resource`), así que la app nunca debe modificarla: solo filtrarla o armar tablas nuevas. Las columnas que la página no usa van en `NO_SE_USAN` (`app/app.py`) y no se cargan. Si la app empieza a usar una, hay que sacarla de esa lista. Antes (`st.cache_data`) se copiaban ≈ 107 MB en cada clic y la página se caía en el plan gratuito de Streamlit.
 - **Prioridad del MEF:** el orden de prelación de la Directiva 001-2019-EF/63.01, art. 15.2 (9 grupos). «Ejecutabilidad» no es un término de esa norma.
 
 ## Dónde está cada cosa

@@ -39,8 +39,23 @@ FECHA_EMPRESAS = f"{pd.Timestamp(_FECHAS.get('empresas', _FECHAS['mef'])):%d/%m/
 st.set_page_config(page_title="Cartera de inversiones del Estado", page_icon="🏛️", layout="wide")
 
 # ============================================================
-# PASO 5.1: Cargar los datos una sola vez (st.cache_data guarda la tabla en memoria entre clics)
+# PASO 5.1: Cargar los datos una sola vez y compartirlos entre todos los visitantes
+#   st.cache_resource guarda UNA tabla en memoria para todas las sesiones y clics. Antes se usaba st.cache_data, que entrega
+#   una COPIA completa (≈ 107 MB) en cada clic de cada persona: con dos o tres personas a la vez, el plan gratuito de
+#   Streamlit se quedaba sin memoria y la página se caía o quedaba en blanco (20/11/2026).
+#   Regla: la app nunca modifica estas tablas; solo las filtra o arma tablas nuevas a partir de ellas.
 # ============================================================
+# Columnas que la página no usa (las usan los procesos): no se cargan. La más pesada es la descripción técnica
+# (alternativa, ≈ 15 MB). Antes: 166 columnas, ≈ 107 MB | Después: ≈ 107 columnas, ≈ 71 MB.
+# Si la app empieza a usar una de ellas, hay que quitarla de esta lista.
+NO_SE_USAN = ["snip", "sector", "situacion", "marco", "funcion", "departamento", "provincia", "distrito", "uf", "alternativa",
+              "informe_cierre", "tiene_12b", "tiene_f8", "tiene_f9", "tipologia", "ctrl", "dev_hasta_2025", "saldo",
+              "avance_fisico_original", "beneficiarios", "beneficiarios_original", "fecha_viable", "brecha_servicio",
+              "brecha_unidad", "brecha_aporte", "n_brechas", "monto_et", "fianza", "inicio_fisico", "fin_fisico",
+              "comprometido_2026", "fecha_f9", "reprogramado_ene_oct", *[f"dev_2026_{m:02d}" for m in range(1, 12)],
+              "sit_categoria", "cuanto", "motivo_sin_brecha", "desv_diseno", "desv_ejecucion", "rango_desviacion",
+              "programado_pmi_2026", "programado_pmi_desde_2027", "meses_desde_fin", "rango_atraso", "rango_programacion",
+              "pct_gastado_a_la_declaracion", "diferencia_gasto_avance", "frase_indice", "frase_alerta"]
 IA = RAIZ / "data" / "procesado" / "ia_titulos.parquet"
 # Obras paralizadas según la Contraloría (Proceso 8): una fila por obra, unida a su proyecto por el CUI
 CONTRALORIA = PROCESADO / "contraloria_paralizadas.parquet"
@@ -60,11 +75,12 @@ def sin_tildes(texto):
     """Antes: 'Sánchez, Junín' | Después: 'sanchez, junin' (minúsculas y sin tildes), para comparar al buscar."""
     return "".join(c for c in unicodedata.normalize("NFKD", str(texto).lower()) if not unicodedata.combining(c))
 
-@st.cache_data
+@st.cache_resource(show_spinner="Cargando las 26 000 inversiones…")
 def cargar(marca):
     """Lee las cinco preguntas. Si existen títulos de alcance hechos con IA (Proceso 6), los usa en lugar del nombre
     acortado; el nombre oficial sigue en la columna 'nombre' (se muestra en "Para especialistas")."""
     tabla = pd.read_parquet(DATOS)
+    tabla = tabla.drop(columns=[c for c in NO_SE_USAN if c in tabla.columns])
     tabla["redactado_por_ia"] = False
     tabla["lo_que_frena"] = ""
     if IA.exists():
@@ -78,7 +94,7 @@ def cargar(marca):
     #   de "¿Cómo está la cartera?" para cualquier selección (resumen_cartera.resumen)
     #   Antes: 1 fila por proyecto con las cinco preguntas | Después: la misma fila, con las columnas del Proceso 7 que faltaban
     frases = pd.read_parquet(PROCESADO / "indicadores_proyecto.parquet")
-    frases = frases[["id"] + [c for c in frases.columns if c not in tabla.columns]]
+    frases = frases[["id"] + [c for c in frases.columns if c not in tabla.columns and c not in NO_SE_USAN]]
     tabla = tabla.merge(frases, on="id", how="left")
     # Ejecución presupuestal en % (las mismas dos medidas de la ficha), para la lista y el mapa
     #   Antes: proporciones (0.153) | Después: porcentajes (15.3); sin presupuesto 2026 queda vacío
@@ -125,7 +141,7 @@ def avance_12b(lectura, avance, fecha):
         return f"{LECTURA_TEXTO[lectura]} (12-B: {numero})"
     return numero
 
-@st.cache_data
+@st.cache_resource
 def cargar_paralizadas(marca):
     """Las obras paralizadas según la Contraloría (Proceso 8): causa, avance físico, año de inicio y código INFOBRAS.
     Si el archivo no existe, una tabla vacía: la ficha simplemente no muestra el recuadro."""
@@ -133,7 +149,7 @@ def cargar_paralizadas(marca):
         return pd.read_parquet(CONTRALORIA)
     return pd.DataFrame(columns=["id", "infobras", "obra", "causa", "avance_fisico_obra", "anio_inicio_obra"])
 
-@st.cache_data
+@st.cache_resource
 def cargar_brechas(marca):
     """Todas las brechas de cada proyecto (Proceso 3): una fila por proyecto y brecha, con su aporte y su unidad.
     Antes: 'PORCENTAJE DE …' en mayúsculas | Después: 'Porcentaje de …' (solo la primera letra en mayúscula)."""
