@@ -16,18 +16,21 @@ from streamlit.testing.v1 import AppTest
 RAIZ = Path(__file__).resolve().parents[1]
 APP = str(RAIZ / "app" / "app.py")
 TODO = "__todo__"     # la opción «Todos» o «Todas» de cada lista
-# Listas desplegables, de arriba abajo: nivel, sector o gobierno regional, pliego, unidad ejecutora, tipo, estado y orden
-NIVEL, CARTERA, PLIEGO, UNIDAD, TIPO, ESTADO, ORDEN = range(7)
+# Listas desplegables, en el orden en que aparecen en la página (fila por fila, de izquierda a derecha): nivel, sector o
+# gobierno regional, pliego | unidad ejecutora, tipo, estado | componentes, fase, presupuesto | orden de la lista
+NIVEL, CARTERA, PLIEGO, UNIDAD, TIPO, ESTADO, COMPONENTES, FASE, PRESUPUESTO, ORDEN = range(10)
 
 app = AppTest.from_file(APP, default_timeout=180)
 app.run()
 cifras = lambda: sum(m.value.count('class="cifra"') for m in app.markdown)      # tarjetas de indicadores
-cajas = lambda: sum(m.value.count('class="edt-caja"') for m in app.markdown)    # cajas del árbol de la cartera
+cajas = lambda: sum(m.value.count('class="punto"') for m in app.markdown)       # renglones del esquema de la cartera
 metricas = lambda: [m.value for m in app.metric]
 lista_de = lambda prueba: next(d.value for d in prueba.dataframe if "Ficha" in d.value.columns)   # la lista de proyectos
 lista = lambda: lista_de(app)
 print("1. Carga inicial (portafolio total) — errores:", len(app.exception), "| métricas:", metricas(),
-      "| indicadores:", cifras(), "| cajas del árbol:", cajas(), "| filas de la lista:", len(lista()))
+      "| indicadores:", cifras(), "| renglones del esquema:", cajas(), "| filas de la lista:", len(lista()),
+      "| flujo de fases:", any('class="flujo"' in m.value for m in app.markdown),
+      "| ya ejecutadas en la lista (deben ser 0):", int(lista()["Estado"].str.contains("Ya ejecutada").sum()))
 
 app.selectbox[NIVEL].select("Gobierno nacional").run()
 print("1b. Gobierno nacional — errores:", len(app.exception), "| métricas:", metricas(), "| cajas:", cajas())
@@ -134,12 +137,13 @@ port.query_params["b"] = ",".join(paralizadas["id"].unique()[:3])
 port.run()
 comparacion = lambda: next(d.value for d in port.dataframe if "Indicador" in d.value.columns)
 print("12. Portafolios desde el enlace — errores:", len(port.exception), "| columnas:", list(comparacion().columns)[1:],
-      "| proyectos:", comparacion().iloc[0, 1:].tolist(), "| con obras paralizadas:", comparacion().iloc[-1, 1:].tolist())
+      "| proyectos:", comparacion().iloc[0, 1:].tolist(),
+      "| con obras paralizadas:", comparacion().set_index("Indicador").loc["Con obras paralizadas según la Contraloría"].tolist())
 port.selectbox[NIVEL].select("Gobierno nacional").run()
 port.selectbox[CARTERA].select("DESARROLLO E INCLUSION SOCIAL").run()
 port.button(key="agregar_B").click().run()
 port.button(key="vaciar_A").click().run()
-print("    Agregar los 87 del MIDIS a B y vaciar A — errores:", len(port.exception),
+print("    Agregar la lista del MIDIS a B y vaciar A — errores:", len(port.exception),
       "| proyectos A y B:", comparacion().iloc[0, 1:].tolist(), "| casillas B marcadas en la lista:", int(lista_de(port)["B"].sum()))
 pruebas.append(port)
 
@@ -165,6 +169,49 @@ for cui, esperado in (("2300016", "reportó a FONAFE"), ("2547586", "no publica 
           "| cifras de ejecución:", cifras or "sin dato",
           "| estado:", next((m.value.split("</p>")[1][:60] for m in f.markdown if "¿Cómo va?" in m.value), "-"))
     pruebas.append(f)
+
+# Ya ejecutadas (Proceso 10): ocultas por defecto; el interruptor las muestra
+ej = AppTest.from_file(APP, default_timeout=180)
+ej.run()
+n_antes = ej.metric[0].value                                   # «Proyectos» de la selección
+ej.toggle[0].set_value(True).run()
+n_despues = ej.metric[0].value
+# Con el interruptor, el estado «Ya ejecutada» aparece en la lista de estados; al elegirlo, solo quedan ya ejecutadas
+ej.selectbox[ESTADO].select("Ya ejecutada").run()
+estados = lista_de(ej)["Estado"]
+print("15. Interruptor «Mostrar las ya ejecutadas» — errores:", len(ej.exception), "| proyectos antes:", n_antes,
+      "| después:", n_despues, "| estado «Ya ejecutada»:", ej.metric[0].value, "proyectos",
+      "| todas ya ejecutadas:", bool(estados.str.contains("Ya ejecutada").all()))
+pruebas.append(ej)
+
+# Componentes: «Solo equipamiento» deja solo filas con el check de equipamiento y sin los otros dos
+comp = AppTest.from_file(APP, default_timeout=180)
+comp.run()
+comp.selectbox[COMPONENTES].select("Solo equipamiento").run()
+t = lista_de(comp)
+print("16. Componentes «Solo equipamiento» — errores:", len(comp.exception), "| filas:", len(t),
+      "| todas con solo equipamiento:", bool(t["Equipo"].eq("🟢").all() and t["Infra"].eq("").all() and t["Gestión"].eq("").all()),
+      "| opciones:", comp.selectbox[COMPONENTES].options[1:4])
+# Fase y orden según la prioridad del MEF: la columna «Prioridad MEF» queda de menor a mayor
+comp.selectbox[COMPONENTES].select(TODO).run()
+comp.selectbox[ORDEN].select("Prioridad según el MEF: primero lo más avanzado").run()
+prio = lista_de(comp)["Prioridad MEF"].dropna()
+print("17. Orden por prioridad del MEF — errores:", len(comp.exception), "| de menor a mayor:", bool(prio.is_monotonic_increasing),
+      "| fases:", comp.selectbox[FASE].options[1:])
+comp.selectbox[FASE].select("ejecucion").run()
+print("    Fase «En ejecución» — errores:", len(comp.exception), "| filas:", len(lista_de(comp)),
+      "| todas en ejecución:", bool(lista_de(comp)["Fase"].str.startswith("En ejecución").all()))
+pruebas.append(comp)
+
+# Ficha de una inversión de la pandemia de EsSalud (0 % en el 12-B, pero su texto dice que se ejecutó): se abre por enlace
+# aunque esté oculta, y dice «Según el texto: ya ejecutada», qué incluye y en qué fase está
+f = AppTest.from_file(APP, default_timeout=180)
+f.query_params["ficha"] = "2538136"
+f.run()
+texto_ficha = " ".join(m.value for m in f.markdown)
+print("18. Ficha 2538136 (EsSalud, pandemia) — errores:", len(f.exception), "| según el texto:", "Según el texto: ya ejecutada" in texto_ficha,
+      "| ¿Qué incluye?:", "¿Qué incluye?" in texto_ficha, "| ¿En qué fase está?:", "¿En qué fase está?" in texto_ficha)
+pruebas.append(f)
 
 for prueba in pruebas:
     for e in prueba.exception:

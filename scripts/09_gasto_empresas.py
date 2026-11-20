@@ -28,7 +28,11 @@ import pandas as pd
 
 RAIZ = Path(__file__).resolve().parents[1]
 PROCESADO = RAIZ / "data" / "procesado"
-RESPUESTAS = RAIZ / "data" / "crudo" / "empresas"
+# Las respuestas se guardan en una carpeta por fecha de los datos del MEF (data/procesado/fechas.json, Proceso 1):
+#   al actualizar los datos, se consulta todo de nuevo; dentro de una misma fecha, lo ya consultado no se vuelve a pedir
+FECHAS = PROCESADO / "fechas.json"
+fechas = json.loads(FECHAS.read_text(encoding="utf-8"))
+RESPUESTAS = RAIZ / "data" / "crudo" / "empresas" / fechas["mef"]
 RESPUESTAS.mkdir(parents=True, exist_ok=True)
 URL = "https://ofi5.mef.gob.pe/invierteWS/Ssi/traeFonafeSSI"
 ANIO = 2026
@@ -120,7 +124,7 @@ gasto = pd.DataFrame([resumir(cui, filas) for cui, filas in respuestas.items()])
 #   Antes (2652824): acumulado S/ 17 689, 2026 S/ 35 378 | Después: acumulado S/ 35 378
 # ============================================================
 gasto["gasto_acumulado_original"] = gasto.get("gasto_acumulado")
-imposible = gasto["con_dato"] & (gasto["gasto_acumulado"] + 1 < gasto["gasto_2026"])
+imposible = gasto["con_dato"] & (gasto["gasto_acumulado"] + 1 < gasto["gasto_2026"])   # la regla vale para cualquier fecha
 gasto.loc[imposible, "gasto_acumulado"] = gasto.loc[imposible, "gasto_2026"]
 print("9.3b Acumulado menor que el gasto 2026 (corregidos):", int(imposible.sum()), gasto.loc[imposible, "cui"].tolist())
 
@@ -144,4 +148,7 @@ if PRUEBA:
     print("    Prueba: no se guarda el parquet.")
 else:
     gasto.to_parquet(PROCESADO / "gasto_empresas.parquet", index=False)
-    print("    Guardado:", gasto.shape, "->", PROCESADO / "gasto_empresas.parquet")
+    # Fecha de la consulta, para la app (pie de página). Antes: escrita a mano | Después: la del día en que se consultó
+    fechas["empresas"] = time.strftime("%Y-%m-%d")
+    FECHAS.write_text(json.dumps(fechas, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("    Guardado:", gasto.shape, "->", PROCESADO / "gasto_empresas.parquet", "| fecha de la consulta:", fechas["empresas"])

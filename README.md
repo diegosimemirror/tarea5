@@ -43,7 +43,7 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 
 ## 5. Why now
 
-- El MEF publica en su portal de Datos Abiertos, **en bloque y con actualización frecuente** (la última, el 08/11/2026), el detalle de todas las inversiones, sus brechas y su último seguimiento (12-B). El conjunto "Detalle de inversiones" existe desde marzo de 2023.
+- El MEF publica en su portal de Datos Abiertos, **en bloque y con actualización frecuente** (la última que usa la app, el 20/11/2026), el detalle de todas las inversiones, sus brechas y su último seguimiento (12-B). El conjunto "Detalle de inversiones" existe desde marzo de 2023.
 - **Los modelos de lenguaje ya pueden traducir** un texto técnico a lenguaje simple a bajo costo y con salidas estructuradas verificables.
 
 ## 6. Demo
@@ -52,9 +52,11 @@ Busco facilitar la comunicación de información densa para la toma de decisione
 - **Correr en local:**
   ```bash
   pip install -r requirements.txt
-  python scripts/01_descargar.py      # baja los datos del MEF (≈ 537 MB)
+  python scripts/01_descargar.py      # baja los datos del MEF (≈ 537 MB) y anota la fecha
+  python scripts/11_12b_en_vivo.py    # último 12-B de EsSalud en vivo (categoría y próximos pasos), ≈ 16 min
   python scripts/03_preparar.py       # arma la base del gobierno nacional y los gobiernos regionales
-  python scripts/09_gasto_empresas.py # gasto de EsSalud y FONAFE (no usan el SIAF), ≈ 12 min la primera vez
+  python scripts/09_gasto_empresas.py # gasto de EsSalud y FONAFE (no usan el SIAF), ≈ 20 min
+  python scripts/10_fases_componentes.py # ¿ya se ejecutó?, componentes, fase y prioridad del MEF
   python scripts/04_traducir.py       # cinco preguntas en lenguaje simple
   python scripts/07_indicadores.py    # indicadores de cartera
   python scripts/08_contraloria.py    # obras paralizadas según la Contraloría
@@ -65,7 +67,8 @@ Busco facilitar la comunicación de información densa para la toma de decisione
   1. La cartera completa y sus cinco indicadores.
 
      ![Cartera completa con sus cinco indicadores](docs/capturas/01_cartera_completa.png)
-  2. Un ministerio: el árbol con sus unidades ejecutoras. En rojo, las que tienen al menos un proyecto atrasado.
+  2. Un ministerio: el árbol con sus unidades ejecutoras. En rojo, las que tienen al menos un proyecto atrasado. (Desde el
+     20/11/2026 el árbol es un esquema con sangrías que se abre y se cierra, junto al flujo de fases.)
 
      ![Árbol de la cartera del Ministerio de Salud](docs/capturas/02_arbol_ministerio.png)
   3. La ficha de un proyecto, el hospital Sergio Bernales, con el título escrito por la IA a partir de la descripción del MEF.
@@ -137,7 +140,11 @@ Claude Code escribió los scripts de descarga, exploración, preparación y trad
 ## Datos y limitaciones
 
 - **Fuentes:**
-  - MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al 08/11/2026.
+  - MEF, Datos Abiertos (Detalle de inversiones e Inversiones y brechas), al 20/11/2026. El Formato 12-B de Datos Abiertos
+    se publica vacío desde el 18/11/2026: se usa su última copia válida (08/11/2026) y, para EsSalud, la consulta en vivo
+    del 12-B (20/11/2026).
+  - MEF, consulta SSI: gasto que EsSalud y las empresas de FONAFE reportan a FONAFE (20/11/2026).
+  - Orden de prioridad: Directiva N.° 001-2019-EF/63.01, artículo 15.2 (orden de prelación del PMI).
   - Contraloría General de la República, [Informe de obras paralizadas en el territorio nacional a junio de 2026](https://www.gob.pe/institucion/contraloria/informes-publicaciones/8489152-informe-de-obras-paralizadas-en-el-territorio-nacional-a-junio-de-2026), Anexo N.° 01 (corte al 30/06/2026). De sus 2 262 obras, 551 pertenecen a 519 proyectos de esta base; se unen por el CUI.
 - **Crédito:** la idea de usar el anexo de la Contraloría viene de [«Obras que esperan»](https://github.com/bocchienjoyer/obras-que-esperan), de Jose Navarro, compañero de la diplomatura.
 - **Exploración y decisiones de limpieza:** [`docs/informe_exploracion.md`](docs/informe_exploracion.md).
@@ -145,4 +152,6 @@ Claude Code escribió los scripts de descarga, exploración, preparación y trad
 - **Alcance:** gobierno nacional y gobiernos regionales; los gobiernos locales aún no están.
 - **Títulos con IA:** por ahora solo en el gobierno nacional. Los proyectos regionales muestran su nombre oficial.
 - **El estado de cada proyecto se calcula con reglas de ejemplo** a partir de las fechas y montos que registran las entidades. No es una evaluación oficial.
+- **«Ya ejecutada», componentes y fase** se deducen con reglas de palabras sobre los textos del 12-B, el nombre y la
+  descripción técnica (Proceso 10). El MEF no publica los componentes; la app muestra la frase que sustenta cada lectura.
 - **Datos personales:** no se usan.

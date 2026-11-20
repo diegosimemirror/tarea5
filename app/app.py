@@ -17,17 +17,24 @@ import html
 import unicodedata   # unicodedata: quitar las tildes, para que «Sanchez» encuentre «Sánchez» al buscar
 import pandas as pd
 import pydeck as pdk   # pydeck: mapas interactivos; viene instalado con Streamlit
-from resumen_cartera import resumen, proporcion   # resumen(): indicadores de cartera de cualquier grupo de proyectos (app/resumen_cartera.py)
+# resumen(): indicadores de cartera de cualquier grupo de proyectos; GRUPOS_FIN: los cinco grupos de financiamiento
+from resumen_cartera import resumen, proporcion, GRUPOS_FIN
 # Guardar y abrir los portafolios A y B en un enlace o en un archivo CSV (app/portafolios.py)
 from portafolios import LETRAS, MAX_ENLACE, codigos_del_enlace, a_enlace, a_csv, leer_csv
 from urllib.parse import urlencode   # urlencode: arma el texto del enlace (?a=…&b=…) con caracteres seguros (viene con Python)
+import json   # json: leer la fecha de los datos (data/procesado/fechas.json, la guardan los Procesos 1 y 9)
+# Piezas visuales: paleta por clase de objeto, esquema que se abre y se cierra, flujo de fases y marcas de componentes
+from vistas import CSS as CSS_VISTAS, esquema, flujo, marcas_componentes, COMPONENTES, FASES, DETENIDA, NIVELES_COLOR
 import streamlit as st
 
 RAIZ = Path(__file__).resolve().parents[1]
 PROCESADO = RAIZ / "data" / "procesado"
 DATOS = PROCESADO / "cinco_preguntas.parquet"
-FECHA_DATOS = "08/11/2026"
-FECHA_EMPRESAS = "19/11/2026"   # cuándo se consultó el gasto de las empresas públicas (Proceso 9)
+# Fechas de los datos. Antes: escritas a mano aquí | Después: las que guardan los Procesos 1 (MEF) y 9 (empresas públicas)
+_FECHAS = json.loads((PROCESADO / "fechas.json").read_text(encoding="utf-8"))
+HOY = pd.Timestamp(_FECHAS["mef"])
+FECHA_DATOS = f"{HOY:%d/%m/%Y}"
+FECHA_EMPRESAS = f"{pd.Timestamp(_FECHAS.get('empresas', _FECHAS['mef'])):%d/%m/%Y}"   # consulta del gasto de las empresas públicas
 
 st.set_page_config(page_title="Cartera de inversiones del Estado", page_icon="🏛️", layout="wide")
 
@@ -84,7 +91,39 @@ def cargar(marca):
     # Marca de obra paralizada según la Contraloría (Proceso 8), para la ficha y para comparar portafolios
     #   Antes: sin la columna | Después: True en los proyectos con al menos una obra en el anexo de la Contraloría
     tabla["paralizada_cgr"] = tabla["id"].isin(pd.read_parquet(CONTRALORIA)["id"]) if CONTRALORIA.exists() else False
+    # Nombre de la fase para mostrar (Proceso 10): el de proyectos o el de IOARR, que usan palabras distintas
+    #   Antes: fase = 'expediente' | Después: 'Expediente técnico en elaboración' (proyecto) o 'Documento técnico…' (IOARR)
+    nombres_pi = {f[0]: f[1] for f in FASES} | {DETENIDA[0]: DETENIDA[1]}
+    nombres_ioarr = {f[0]: f[2] for f in FASES} | {DETENIDA[0]: DETENIDA[1]}
+    tabla["fase_nombre"] = [(nombres_ioarr if t == "IOARR" else nombres_pi)[f] for f, t in zip(tabla["fase"], tabla["tipo_grupo"])]
+    # Lo programado en el PMI para los años siguientes (2027 a 2029): columnas PMI_ANIO_2 a 4 del MEF
+    tabla["pmi_siguientes"] = tabla[["pmi_2", "pmi_3", "pmi_4"]].fillna(0).sum(axis=1)
+    # Avance de ejecución para la lista: el porcentaje declarado en el 12-B o lo que dice su texto
+    #   Antes: 0 (número) | Después: 'Según el texto: ya ejecutada (12-B: 0 %)'
+    tabla["avance_12b"] = [avance_12b(l, a, d) for l, a, d in
+                           zip(tabla["lectura_12b"], tabla["avance_ejecucion_original"], tabla["fecha_declaracion"])]
     return tabla
+
+def pct_texto(valor):
+    """93.94 -> '93,9 %'; sin dato -> 'sin % declarado'."""
+    return "sin % declarado" if pd.isna(valor) else f"{valor:.1f} %".replace(".", ",")
+
+# Lo que dice el texto del 12-B, en palabras para la lista y la ficha (las lecturas «En proceso» muestran solo el número)
+LECTURA_TEXTO = {"Ya ejecutada": "Según el texto: ya ejecutada",
+                 "Terminada, en recepción o liquidación": "Según el texto: terminada, en recepción o liquidación",
+                 "Obra concluida, con pagos pendientes (APP)": "Según el texto: obra concluida, sigue pagándose",
+                 "Ejecución parcial": "Según el texto: ejecución parcial, falta una parte",
+                 "No se ejecutará": "Según el texto: no se ejecutará",
+                 "Perdió vigencia o en evaluación": "Según el texto: perdió vigencia o se evalúa si sigue"}
+
+def avance_12b(lectura, avance, fecha):
+    """Avance declarado en el 12-B o lo que dice su texto. Sin fecha de declaración, el 0 del MEF no es una declaración."""
+    numero = pct_texto(avance if pd.notna(fecha) or (pd.notna(avance) and avance > 0) else float("nan"))
+    if lectura == "Sin 12-B":
+        return "Sin 12-B"
+    if lectura in LECTURA_TEXTO:
+        return f"{LECTURA_TEXTO[lectura]} (12-B: {numero})"
+    return numero
 
 @st.cache_data
 def cargar_paralizadas(marca):
@@ -107,7 +146,7 @@ marca = marca_datos()
 inversiones = cargar(marca)
 brechas_todas = cargar_brechas(marca)
 paralizadas = cargar_paralizadas(marca)
-DIAS_AL_CIERRE = (pd.Timestamp("2026-12-31") - pd.Timestamp("2026-11-10")).days   # misma fecha de referencia que los Procesos 4 y 7
+DIAS_AL_CIERRE = (pd.Timestamp(year=HOY.year, month=12, day=31) - HOY).days   # misma fecha de referencia que los Procesos 4 y 7
 
 # Nombres de sector que entiende cualquiera (el pliego, p. ej. «Ministerio de Salud», va en su propia lista)
 NOMBRES = {
@@ -134,6 +173,8 @@ ESTADOS = {
     "Por cerrar": ("#5b6068", "✓", 4), "Sin presupuesto este año": ("#8a9097", "–", 5), "En marcha": ("#0c8a0c", "●", 6),
     # Empresas públicas (EsSalud, FONAFE) cuyo gasto no publica el MEF y que no declararon su avance en el último año
     "Sin datos de avance": ("#6f7680", "○", 7),
+    # El 12-B (texto o número) o el formato de cierre dicen que ya se ejecutó (Proceso 10): ocultas salvo que se pidan
+    "Ya ejecutada": ("#004142", "✔", 8),
 }
 
 st.markdown("""
@@ -143,18 +184,7 @@ st.markdown("""
 .chip b {display:inline-grid; place-items:center; width:1.1em;}
 .respuesta {font-size:1.05rem; margin:0 0 0.9rem 0;}
 .pregunta {font-weight:700; margin:0;}
-/* Estructura de desglose de la cartera completa: una caja arriba y los sectores debajo */
-.edt-raiz {max-width:380px; margin:0.5rem auto 0 auto; text-align:center; padding:10px 14px; border:1.5px solid #103f91;
-           border-radius:8px; background:rgba(16,63,145,0.08);}
-.edt-linea {width:0; height:18px; margin:0 auto; border-left:1.5px solid rgba(128,128,128,0.6);}
-.edt-hijos {display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px; padding-top:14px;
-            border-top:1.5px solid rgba(128,128,128,0.6); margin-bottom:0.5rem;}
-.edt-caja {padding:8px 10px; border:1px solid rgba(128,128,128,0.55); border-radius:8px; font-size:0.92rem;}
-.edt-raiz b, .edt-caja b, .edt-sub b {display:block;}
-.edt-sub {margin:1rem 0 0 0; padding:6px 12px; border-left:4px solid #103f91; background:rgba(16,63,145,0.06); border-radius:4px;}
-.edt-sub span {opacity:0.75;}
 .ruta {font-size:0.95rem; opacity:0.8; margin:-0.6rem 0 0.6rem 0;}
-.edt-raiz span, .edt-caja span {opacity:0.75;}
 /* Tarjetas de indicadores: una pregunta, una cifra y una frase */
 div[data-testid="stMarkdownContainer"] p.cifra {font-size:2rem; font-weight:700; line-height:1.15; margin:0.15rem 0 0.1rem 0;}
 .explica {font-size:0.95rem; margin:0;}
@@ -180,6 +210,11 @@ ul.detalle {padding-left:1.2rem;}
 @media (prefers-color-scheme: dark) {.pista i {background:#3987e5;}}
 .nota {font-size:0.92rem; opacity:0.85; margin:0.2rem 0 0.9rem 0;}
 </style>""", unsafe_allow_html=True)
+st.markdown(CSS_VISTAS, unsafe_allow_html=True)   # estilos del esquema, el flujo de fases, los componentes y las secciones
+
+def seccion(texto, color="#89f0e1"):
+    """Etiqueta de sección al estilo de una revista: mayúsculas pequeñas con una raya de color (un color por sección)."""
+    st.markdown(f'<p class="seccion" style="border-left-color:{color}">{html.escape(texto)}</p>', unsafe_allow_html=True)
 
 def chip(estado, n=None):
     color, simbolo, _ = ESTADOS[estado]
@@ -215,7 +250,22 @@ def pie_de_pagina():
             "- **Sin presupuesto este año:** está aprobado, no ha empezado y no tiene presupuesto en 2026.\n"
             "- **En marcha:** ninguna de las anteriores.\n"
             "- **Sin datos de avance:** es una empresa pública (EsSalud o una empresa de FONAFE), el MEF no publica su gasto "
-            "y la entidad no declaró su avance en el último año.\n\n"
+            "y la entidad no declaró su avance en el último año.\n"
+            "- **Ya ejecutada:** según su último reporte de seguimiento (formato 12-B) o su formato de cierre, ya se ejecutó y "
+            "solo falta el cierre formal. No necesita financiamiento: se oculta, salvo que actives «Mostrar las ya ejecutadas».\n\n"
+            "**¿Ya se ejecutó? Lectura del 12-B.** No basta con el porcentaje de avance: en muchas inversiones el 12-B dice 0 %, "
+            "pero su texto dice que ya se ejecutaron (por ejemplo, las compras de EsSalud durante la pandemia). Se leen la "
+            "categoría y el detalle de la situación actual y los próximos pasos (p. ej., «registrar el cierre»), con reglas de "
+            "palabras revisadas a mano. Cuenta como ya ejecutada si: el texto lo dice; el 12-B declara 100 % o más; o la entidad "
+            "registró su formato de cierre (formato 9) y solo le falta liquidar. La ficha muestra la frase que lo sustenta.\n\n"
+            "**¿Qué incluye? Componentes.** Tres clases, como los factores productivos de Invierte.pe: infraestructura (obras), "
+            "equipamiento (equipos, mobiliario y vehículos) y gestión e intangibles (software, capacitación, estudios, modelos "
+            "de gestión). El MEF no los publica en sus datos abiertos: se deducen del nombre (las IOARR siguen el formato "
+            "«ACCIÓN DE ACTIVOS») y de la descripción técnica de los proyectos. Son una aproximación: confírmalos en el MEF.\n\n"
+            "**¿En qué fase está?** Gana la más avanzada entre la situación del último 12-B, la etapa de su registro en la fase "
+            "de ejecución (formato 8: antes del expediente, expediente técnico o ejecución física) y el avance físico declarado.\n\n"
+            "**¿Tiene presupuesto?** Presupuesto 2026 asignado (PIM; en EsSalud y FONAFE, el que reportan a FONAFE), "
+            "programado en el PMI para 2026 sin presupuesto, programado para 2027 en adelante, o sin financiamiento.\n\n"
             "**EsSalud y las empresas de FONAFE** no registran su gasto en el sistema de presupuesto público (SIAF). Su gasto "
             "y su presupuesto 2026 son los que reportan a FONAFE, tomados de la consulta SSI del MEF; llegan hasta un mes "
             "anterior (por lo general, septiembre de 2026). Si el MEF no tiene ese reporte, la ejecución aparece como «sin dato» "
@@ -242,7 +292,14 @@ def pie_de_pagina():
             "de la Contraloría (corte al 30/06/2026). Se une por el código del proyecto (CUI); un proyecto puede tener varias "
             "obras. La causa es la que registra la Contraloría. Es independiente del estado de arriba, que sale de las fechas "
             "y montos que la entidad registra en el MEF.")
-    st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}. "
+    # El 12-B puede ser de otra fecha: el MEF publicó su archivo vacío desde el 18/11/2026 (Proceso 3 usa la última copia válida)
+    f12b = pd.Timestamp(_FECHAS.get("f12b", _FECHAS["mef"]))
+    nota_12b = (f" El seguimiento (formato 12-B) es del {f12b:%d/%m/%Y}: el MEF publica ese archivo vacío desde el 18/11/2026."
+                if f12b < HOY else "")
+    vivo = (f" El 12-B de EsSalud se consultó en vivo el {pd.Timestamp(_FECHAS['f12b_vivo']):%d/%m/%Y}."
+            if _FECHAS.get("f12b_vivo") else "")
+    st.caption(f"Fuente: MEF, Datos Abiertos (Detalle de inversiones, Inversiones y brechas, Formato 12-B), al {FECHA_DATOS}.{nota_12b}{vivo} "
+               "Orden de prioridad: Directiva N.° 001-2019-EF/63.01, art. 15.2. "
                f"Gasto de EsSalud y de las empresas de FONAFE: MEF, consulta SSI (información financiera de empresas públicas), "
                f"consultada el {FECHA_EMPRESAS}. Obras paralizadas: {FUENTE_CONTRALORIA}, con corte al {FECHA_CONTRALORIA}.")
 
@@ -409,7 +466,44 @@ TODO = "__todo__"   # valor interno de la opción «Todos» o «Todas» de cada 
 ORDEN_ESTADOS = sorted(ESTADOS, key=lambda e: ESTADOS[e][2])
 NIVELES = {"Gobierno nacional": "Gobierno nacional", "Gobierno regional": "Gobiernos regionales"}
 TIPOS = ["Proyecto de inversión", "IOARR", "IRI (Reconstrucción con Cambios)", "Programas y otros"]
-FILTROS = ["f_nivel", "f_cartera", "f_pliego", "f_unidad", "f_tipo", "f_estado"]
+# Componentes (Proceso 10): primero las que tienen uno solo, luego las mezclas
+ORDEN_COMP = ["Solo infraestructura", "Solo equipamiento", "Solo gestión e intangibles", "Infraestructura + Equipamiento",
+              "Infraestructura + Gestión e intangibles", "Equipamiento + Gestión e intangibles",
+              "Infraestructura + Equipamiento + Gestión e intangibles", "Sin información"]
+# Fases para la lista desplegable (un nombre que sirve para proyectos y para IOARR), de la menos a la más avanzada
+FASE_FILTRO = {"idea": "Idea o en estudio", "aprobada": "Viable o aprobada, sin expediente técnico",
+               "expediente": "Expediente o documento técnico en elaboración", "contratar": "Lista para contratar",
+               "ejecucion": "En ejecución", "terminada": "Terminada: recepción o liquidación",
+               "ejecutada": "Ya ejecutada: falta el cierre", "detenida": "Detenida o por desactivar"}
+# Lugar de cada fase en el orden de prioridad del MEF para el PMI (Proceso 10, paso 10.4); en ejecución: 2 o 3 según su fin
+PRIORIDAD_FASE = {"ejecutada": "1", "terminada": "1", "ejecucion": "2–4", "contratar": "5", "expediente": "6", "aprobada": "7",
+                  "idea": "8"}
+URL_DIRECTIVA = "https://www.mef.gob.pe/es/normatividad-inv-publica/instrumento/directivas"
+# Explicación del orden de prioridad (ventana «¿Por qué una inversión va más arriba?»)
+TEXTO_PRIORIDAD = (
+    "Para armar su **Programa Multianual de Inversiones (PMI)** —la lista de inversiones con dinero previsto para los "
+    "próximos tres años—, toda entidad debe ordenar su cartera según el **orden de prelación** del MEF: **primero va lo "
+    "más avanzado**, porque terminar lo empezado evita obras a medias. EsSalud y las empresas de FONAFE aplican el mismo orden.\n\n"
+    "1. Ejecución física **terminada**: en liquidación o por iniciarla.\n"
+    "2. **En ejecución** que termina en el año 1 del PMI (el próximo año).\n"
+    "3. En ejecución que termina en los años 2 o 3.\n"
+    "4. En ejecución que termina después del PMI.\n"
+    "5. **Lista para contratar:** expediente técnico o documento equivalente completo y vigente.\n"
+    "6. **Expediente** técnico o documento equivalente **en elaboración**.\n"
+    "7. **Viable o aprobada**, sin ejecución.\n"
+    "8. En formulación y evaluación.\n"
+    "9. Ideas (no están en esta app, que solo tiene inversiones activas).\n\n"
+    "Dentro de cada grupo, cada sector ordena con sus **criterios de priorización** (puntaje de hasta 100: cierre de "
+    "brechas, alineamiento con el planeamiento, impacto territorial y otros). **«Ejecutabilidad»** no es un término de la "
+    "norma de Invierte.pe: el MEF lo usa al asignar el presupuesto (montos acordes con la capacidad de gasto y los plazos) "
+    "y como un puntaje del ejecutor (cuánto gastó de su presupuesto de inversiones en los últimos 3 años).\n\n"
+    "Las **ya ejecutadas** están en el grupo 1 para el MEF (solo necesitan liquidarse y cerrarse), pero esta app las "
+    "oculta porque no necesitan financiamiento para ejecutarse. Las **detenidas** (no se ejecutarán, perdieron vigencia o "
+    "están en controversia) quedan fuera del orden.\n\n"
+    f"Fuente: Directiva N.° 001-2019-EF/63.01, artículo 15, párrafo 15.2, y artículo 17.1 para EsSalud y FONAFE "
+    f"([normas del MEF]({URL_DIRECTIVA})). La app ubica cada inversión con los datos del MEF (12-B y formato 8): es una "
+    "aproximación; el orden oficial lo aprueba cada entidad en su PMI.")
+FILTROS = ["f_nivel", "f_cartera", "f_pliego", "f_unidad", "f_tipo", "f_comp", "f_fase", "f_presupuesto", "f_estado"]
 # Al cambiar una lista, las que dependen de ella vuelven a «Todos» (otro sector no tiene los mismos pliegos ni unidades)
 DEPENDE = {"f_nivel": ["f_cartera", "f_pliego", "f_unidad"], "f_cartera": ["f_pliego", "f_unidad"], "f_pliego": ["f_unidad"]}
 
@@ -446,14 +540,29 @@ def lista(columna, etiqueta, tabla, campo, clave, todos, nombre=str, orden=None)
                                 else f"{nombre(v)} ({int(cuenta[v]):,})")
     return elegido, (tabla if elegido == TODO else tabla[tabla[campo] == elegido])
 
+seccion("Elige qué ver", "#f2dc6f")
+# Las inversiones que, según el 12-B, ya se ejecutaron no forman parte de ningún portafolio: se ocultan, salvo que se pidan
+#   Antes: todas las inversiones activas | Después: sin las ya ejecutadas (el interruptor las trae de vuelta)
+ejecutadas = inversiones[inversiones["ya_ejecutada"]]
+mostrar_ejecutadas = st.toggle(
+    f"Mostrar las ya ejecutadas ({len(ejecutadas):,} · {millones(ejecutadas['costo'].sum())})", key="f_ejecutadas",
+    help="Inversiones que, según su último reporte de seguimiento (formato 12-B: su texto o su porcentaje) o su formato de "
+         "cierre, ya se ejecutaron y solo les falta el cierre formal. No necesitan financiamiento: por eso no aparecen en la "
+         "lista, los indicadores ni los portafolios, salvo que actives este interruptor.")
+universo = inversiones if mostrar_ejecutadas else inversiones[~inversiones["ya_ejecutada"]]
 s1, s2, s3 = st.columns(3)
 s4, s5, s6 = st.columns(3)
-nivel, sel = lista(s1, "Nivel de gobierno", inversiones, "nivel", "f_nivel", "Todos los niveles", NIVELES.get, list(NIVELES))
+s7, s8, s9 = st.columns(3)
+nivel, sel = lista(s1, "Nivel de gobierno", universo, "nivel", "f_nivel", "Todos los niveles", NIVELES.get, list(NIVELES))
 etiqueta_cartera = {"Gobierno nacional": "Sector", "Gobierno regional": "Gobierno regional"}.get(nivel, "Sector o gobierno regional")
 cartera_elegida, sel = lista(s2, etiqueta_cartera, sel, "cartera", "f_cartera", "Todos", nombre_entidad)
 pliego, sel = lista(s3, "Pliego", sel, "entidad", "f_pliego", "Todos", nombre_entidad)
 unidad, sel = lista(s4, "Unidad ejecutora", sel, "unidad", "f_unidad", "Todas", titulo)
 tipo, sel = lista(s5, "Tipo de inversión", sel, "tipo_grupo", "f_tipo", "Todos", orden=TIPOS)
+# Tres listas nuevas: qué incluye (componentes), en qué fase está y si tiene presupuesto (Procesos 10 y 7)
+componentes_elegidos, sel = lista(s7, "Componentes", sel, "componentes", "f_comp", "Todos", orden=ORDEN_COMP)
+fase_elegida, sel = lista(s8, "Fase", sel, "fase", "f_fase", "Todas", FASE_FILTRO.get, list(FASE_FILTRO))
+presupuesto, sel = lista(s9, "¿Tiene presupuesto?", sel, "financiamiento", "f_presupuesto", "Todos", orden=[g for g, _ in GRUPOS_FIN])
 antes_del_estado = sel
 estado, seleccion = lista(s6, "Estado", sel, "estado", "f_estado", "Todos", lambda e: f"{ESTADOS[e][1]} {e}", ORDEN_ESTADOS)
 
@@ -467,7 +576,9 @@ if pliego != TODO and pliego != cartera_elegida:
     ruta.append(nombre_entidad(pliego))
 if unidad != TODO:
     ruta.append(titulo(unidad))
-extras = [f for f, v in [(tipo, tipo), (f"Estado: {estado}", estado)] if v != TODO]
+extras = [f for f, v in [(tipo, tipo), (componentes_elegidos, componentes_elegidos),
+                          (f"Fase: {FASE_FILTRO.get(fase_elegida, '')}", fase_elegida), (presupuesto, presupuesto),
+                          (f"Estado: {estado}", estado)] if v != TODO]
 st.subheader(ruta[-1])
 if len(ruta) > 1 or extras:      # con todo en «Todos», la ruta repetiría el título
     st.markdown(f'<p class="ruta">{" › ".join(html.escape(p) for p in ruta)}'
@@ -484,94 +595,69 @@ if seleccion.empty:
     pie_de_pagina()
     st.stop()
 
-def etiqueta(texto, ancho=26):
-    return "\\n".join(textwrap.wrap(texto.replace('"', "'"), ancho))
-
 def rgb(hexa, alfa=210):
     """'#d03b3b' -> [208, 59, 59, 210]: el formato de color que usa el mapa."""
     return [int(hexa[i:i + 2], 16) for i in (1, 3, 5)] + [alfa]
 
 # ============================================================
-# PASO 5.3: El árbol de la selección
-#   Con «Todos los niveles»: el portafolio total, sus dos niveles y, debajo de cada uno, sus sectores o gobiernos regionales.
-#   Con un nivel: sus sectores o gobiernos regionales. Con un sector o gobierno regional: sus pliegos (si tiene más de uno)
-#   o sus unidades ejecutoras. Antes: filas de proyectos | Después: una caja por grupo, con su número de proyectos y su costo
+# PASO 5.3: La cartera en un esquema y por fase (reemplaza al árbol de cajas)
+#   Izquierda: esquema con sangrías que se abre y se cierra (de lo elegido hacia abajo: nivel, sector, pliego, unidad y fase),
+#              con proyectos, costo y atrasados en cada renglón.
+#   Derecha:   flujo de fases con un desvío por tipo (proyecto o IOARR): cuántas inversiones hay en cada fase y su lugar en
+#              el orden de prioridad del MEF (primero lo más avanzado).
+#   Antes: un árbol de cajas (graphviz) con 6 grupos y «Otros» | Después: todos los grupos, uno debajo de otro, y las fases
 # ============================================================
-def caja_raiz(nombre, tabla, clase="edt-raiz"):
-    return (f'<div class="{clase}"><b>{html.escape(nombre)}</b><span>{plural(len(tabla), "proyecto")} · '
-            f'{millones(tabla["costo"].sum())}</span></div>')
+def nombre_grupo(columna, valor):
+    """Nombre para mostrar de un renglón del esquema según su columna."""
+    if columna == "nivel":
+        return NIVELES.get(valor, valor)
+    if columna == "unidad":
+        return titulo(valor)
+    if columna == "fase":
+        return FASE_FILTRO.get(valor, valor)
+    return nombre_entidad(valor)
 
-def cajas(tabla, campo):
-    """Una caja por grupo, de mayor a menor costo."""
-    grupos = tabla.groupby(campo).agg(n=("id", "size"), costo=("costo", "sum")).sort_values("costo", ascending=False)
-    return "".join(f'<div class="edt-caja"><b>{html.escape(nombre_entidad(g.Index))}</b>'
-                   f'<span>{plural(g.n, "proyecto")} · {millones(g.costo)}</span></div>' for g in grupos.itertuples())
-
-def arbol(tabla, campo, nombre_raiz):
-    """Árbol dibujado con graphviz: la selección arriba y, debajo, sus 6 pliegos o unidades con más proyectos.
-    En rojo, los que tienen al menos un proyecto atrasado; el resto va en una caja «Otros»."""
-    grupos = (tabla.groupby(campo)
-              .agg(n=("id", "size"), atrasados=("estado", lambda s: int((s == "Atrasado").sum())), costo=("costo", "sum"))
-              .sort_values("n", ascending=False))
-    palabra = "pliegos" if campo == "entidad" else "unidades"
-    # Tamaño homogéneo: todas las cajas miden lo mismo (fixedsize) y el árbol tiene SIEMPRE 7 espacios (6 grupos + "Otros").
-    # Si hay menos grupos, los espacios que sobran se dibujan invisibles a ambos lados. Así, al estirarse al ancho de la
-    # página, la escala es la misma con 7 grupos que con 2, y las cajas no se agrandan.
-    ESPACIOS, VISIBLES = 7, 6
-    # Letra grande (16) porque el árbol se reduce al estirarse a 7 espacios; nombre en hasta 3 líneas, y número y costo aparte
-    CAJA = 'shape=box, fixedsize=true, width=1.75, height=1.4, fontname="Helvetica", fontsize=16'
-    etiqueta_caja = lambda t: "\\n".join(textwrap.wrap(t.replace('"', "'"), 15, max_lines=3, placeholder="…"))
-    nodos = [f'raiz [label="{etiqueta(nombre_raiz, 30)}\\n{plural(len(tabla), "proyecto")}\\n{millones(tabla["costo"].sum())}", '
-             f'shape=box, fixedsize=true, width=3.4, height=1.25, style="rounded,filled", fillcolor="#e9eef8", color="#103f91", '
-             f'fontname="Helvetica", fontsize=15];']
-    hijos = []
-    # itertuples() conserva los números enteros; iterrows() los convertía en decimales (715 -> "715.0")
-    for i, g in enumerate(grupos.head(VISIBLES).itertuples()):
-        borde = "#d03b3b" if g.atrasados else "#9aa0a6"
-        hijos.append((f"g{i}", f'label="{etiqueta_caja(nombre_entidad(g.Index))}\\n{plural(g.n, "proyecto")}\\n{millones(g.costo)}", '
-                               f'{CAJA}, style="rounded", color="{borde}"'))
-    if len(grupos) > VISIBLES:
-        resto = grupos.iloc[VISIBLES:]
-        hijos.append(("otros", f'label="Otros {len(resto)}\\n{palabra}\\n{plural(resto["n"].sum(), "proyecto")}\\n{millones(resto["costo"].sum())}", '
-                               f'{CAJA}, style="rounded,dashed", color="#9aa0a6"'))
-    sobran = ESPACIOS - len(hijos)
-    vacios = [(f"vacio{i}", f'label="", {CAJA}, style=invis') for i in range(sobran)]
-    # Orden de izquierda a derecha: la mitad de los vacíos, los grupos reales y la otra mitad (así quedan centrados)
-    for nombre, atributos in vacios[:sobran // 2] + hijos + vacios[sobran // 2:]:
-        nodos.append(f"{nombre} [{atributos}];")
-        nodos.append(f"raiz -> {nombre}" + (" [style=invis];" if nombre.startswith("vacio") else ";"))
-    st.graphviz_chart("digraph { rankdir=TB; ordering=out; nodesep=0.15; edge [color=\"#9aa0a6\", arrowhead=none]; "
-                      + " ".join(nodos) + " }", width="stretch")
-    st.caption(f"En rojo, los {palabra} con al menos un proyecto atrasado. Se muestran los 6 con más proyectos; "
-               f"el resto va en «Otros». Para ver uno, elígelo arriba en «{'Pliego' if campo == 'entidad' else 'Unidad ejecutora'}».")
-
-with st.expander("Árbol de la cartera", expanded=True):
+def niveles_esquema():
+    """Hasta 3 niveles debajo de lo elegido (así el esquema no se vuelve pesado con las 26 000 inversiones)."""
+    c = NIVELES_COLOR
     if nivel == TODO:
-        partes = caja_raiz("Portafolio total", seleccion) + '<div class="edt-linea"></div>'
-        for nv in [n for n in NIVELES if (seleccion["nivel"] == n).any()]:
-            sub = seleccion[seleccion["nivel"] == nv]
-            partes += caja_raiz(NIVELES[nv], sub, "edt-sub") + f'<div class="edt-hijos">{cajas(sub, "cartera")}</div>'
-        st.markdown(partes, unsafe_allow_html=True)
-        st.caption("Ordenados de mayor a menor costo. Para ver uno, elígelo arriba en «Sector o gobierno regional».")
-    elif cartera_elegida == TODO:
-        st.markdown(caja_raiz(NIVELES[nivel], seleccion) + '<div class="edt-linea"></div>'
-                    f'<div class="edt-hijos">{cajas(seleccion, "cartera")}</div>', unsafe_allow_html=True)
-        st.caption(f"Ordenados de mayor a menor costo. Para ver uno, elígelo arriba en «{etiqueta_cartera}».")
-    elif pliego == TODO and seleccion["entidad"].nunique() > 1:
-        arbol(seleccion, "entidad", ruta[-1])
-    elif unidad == TODO:
-        arbol(seleccion, "unidad", ruta[-1])
-    else:
-        st.caption("Elegiste una unidad ejecutora: sus proyectos están en la lista de abajo.")
+        return [("nivel", c[1]), ("cartera", c[2]), ("entidad", c[3])]
+    if cartera_elegida == TODO:
+        return [("cartera", c[2]), ("entidad", c[3]), ("unidad", c[4])]
+    if pliego == TODO and seleccion["entidad"].nunique() > 1:
+        return [("entidad", c[3]), ("unidad", c[4]), ("fase", "#2fb5a2")]
+    if unidad == TODO:
+        return [("unidad", c[4]), ("fase", "#2fb5a2")]
+    return [("fase", "#2fb5a2")]
 
+seccion("La cartera: de lo general a lo particular, y en qué fase está", "#89f0e1")
+with st.expander("Esquema de la cartera y fases", expanded=True):
+    c_esquema, c_flujo = st.columns([1, 1.1], gap="large")
+    with c_esquema:
+        st.markdown("**Esquema** · abre o cierra cada nivel con su flecha (›). De mayor a menor costo.")
+        niveles_vista = niveles_esquema()
+        abiertos = 1 if seleccion[niveles_vista[0][0]].nunique() <= 3 else 0   # pocos grupos: se ven abiertos
+        st.markdown(esquema(seleccion, niveles_vista, nombre_grupo, millones, plural, raiz=ruta[-1], abiertos=abiertos),
+                    unsafe_allow_html=True)
+        st.caption("Cada renglón: proyectos, costo y, en rojo, los atrasados. Para ver solo uno, elígelo en las listas de arriba.")
+    with c_flujo:
+        st.markdown("**¿En qué fase están?** · el número en el círculo es su lugar en el orden de prioridad del MEF.")
+        st.markdown(flujo(seleccion, PRIORIDAD_FASE, millones, mostrar_ejecutadas), unsafe_allow_html=True)
+        with st.popover("¿Por qué una inversión va más arriba?", width="stretch"):
+            st.markdown(TEXTO_PRIORIDAD)
+
+seccion("Indicadores", "#a2cafa")
 tablero(seleccion)
 
 # ============================================================
 # PASO 5.4: Los proyectos de la selección: buscar, ordenar y mostrarlos en una lista (la ficha de cada uno es el nivel siguiente)
 # ============================================================
+seccion("Lista de proyectos", "#f5ad6e")
 st.subheader("Proyectos")
 # Órdenes posibles de la lista: (columnas, ¿de menor a mayor?) para sort_values()
 ORDENES = {"Estado: primero los que requieren atención": (["_orden", "costo"], [True, False]),
+           # Orden de prioridad del MEF (Proceso 10): primero lo más avanzado; dentro de cada grupo, lo que termina antes
+           "Prioridad según el MEF: primero lo más avanzado": (["prelacion", "fin", "costo"], [True, True, False]),
            "Costo: de mayor a menor": (["costo"], [False]), "Costo: de menor a mayor": (["costo"], [True]),
            "Ejecución acumulada: de menor a mayor": (["ejec_acum"], [True]),
            "Ejecución acumulada: de mayor a menor": (["ejec_acum"], [False]),
@@ -671,7 +757,8 @@ def ficha(fila):
     # Detalle bajo "¿Qué problemas reporta?" (P4): el texto original del reporte, recortado
     detalle_problema = ""
     if texto("clase_problema") == "Reporta problemas" and texto("problema_12b"):
-        original = fila["problema_12b"] if len(fila["problema_12b"]) <= 300 else fila["problema_12b"][:297].rsplit(" ", 1)[0] + "…"
+        problema_txt = fila["problema_12b"].replace("<br>", " — ")   # categoría — detalle (12-B en vivo de EsSalud)
+        original = problema_txt if len(problema_txt) <= 300 else problema_txt[:297].rsplit(" ", 1)[0] + "…"
         detalle_problema = f'<p class="cita">«{html.escape(original)}»</p>'
 
     # (pregunta, respuesta, detalle opcional en HTML)
@@ -706,14 +793,47 @@ def ficha(fila):
         ]
         nota = (f"Gasto que la entidad reportó a FONAFE, hasta {fila['corte_gasto']}: EsSalud y las empresas públicas no "
                 "registran su gasto en el sistema de presupuesto público (SIAF)." if fuente == "FONAFE" else "")
+    # Lo que dice el 12-B (Proceso 10): el avance declarado o, si su texto lo contradice, lo que dice el texto y la frase
+    #   Antes: solo las barras (0 % en las inversiones de la pandemia) | Después: «Según el texto: ya ejecutada (12-B: 0 %)»
+    lectura = fila.get("lectura_12b", "")
+    if lectura in LECTURA_TEXTO:
+        notas_12b = (f'<p class="nota"><b>{html.escape(fila["avance_12b"])}.</b> '
+                     f'{html.escape(str(fila.get("lectura_porque") or ""))}</p>')
+    elif lectura == "Sin 12-B":
+        notas_12b = '<p class="nota">No tiene reporte de seguimiento (formato 12-B) en el MEF.</p>'
+    else:
+        notas_12b = f'<p class="nota">Avance de ejecución que declara la entidad en el 12-B: {html.escape(fila["avance_12b"])}.</p>'
     detalle_ejecucion = (f'<div class="avance">{"".join(partes)}</div>'
-                         + (f'<p class="nota">{html.escape(nota)}</p>' if nota else ""))
+                         + (f'<p class="nota">{html.escape(nota)}</p>' if nota else "") + notas_12b)
+
+    # ¿Qué incluye? Componentes deducidos del nombre y de la descripción técnica (Proceso 10)
+    fuente_comp = fila.get("comp_fuente", "")
+    detalle_componentes = (f'<p>{marcas_componentes(fila)}</p><p class="detalle">Deducido de: {html.escape(fuente_comp)}. '
+                           "El MEF no publica los componentes en sus datos abiertos.</p>")
+    # ¿En qué fase está? La fase y su lugar en el orden de prioridad del MEF
+    prioridad = fila.get("prelacion")
+    if pd.notna(prioridad):
+        frase_fase = (f'{fila["fase_nombre"]}. En el orden de prioridad del MEF para programar inversiones, está en el grupo '
+                      f'{int(prioridad)} de 9 (1 = lo más avanzado).')
+    else:
+        frase_fase = f'{fila["fase_nombre"]}. Está fuera del orden de prioridad del MEF: está detenida o se desactivará.'
+    # ¿Tiene financiamiento? La frase del Proceso 7 y, aparte, el presupuesto asignado y lo programado para los años siguientes
+    montos = [f"Presupuesto 2026: {millones(pim)}" if pd.notna(pim) and pim > 0 else "Sin presupuesto 2026"]
+    if fuente == "SIAF" and pd.notna(fila.get("pia_2026")) and fila["pia_2026"] > 0:
+        montos.append(f"inicial: {millones(fila['pia_2026'])}")
+    if pd.notna(fila.get("certificado_2026")) and fila["certificado_2026"] > 0:
+        montos.append(f"certificado: {millones(fila['certificado_2026'])}")
+    montos.append(f"programado en el PMI para 2027–2029: {millones(fila['pmi_siguientes'])}" if fila["pmi_siguientes"] > 0
+                  else "nada programado para 2027–2029")
+    detalle_financiamiento = f'<p class="detalle">{html.escape(" · ".join(montos))}.</p>'
 
     preguntas = [("¿Qué es?", f'{fila["que_es"]}. {fila["tipo_simple"]} en {fila["lugar"]}.', ""),
+                 ("¿Qué incluye?", "", detalle_componentes),
                  ("¿Qué problema resuelve?", fila["problema"], detalle_brecha),
                  ("¿Cuánto cuesta?", f'Cuesta {millones(costo)}. {texto("frase_costo")}'.strip(), ""),
                  ("¿Cuánto se ha ejecutado?", "", detalle_ejecucion),
-                 ("¿Tiene financiamiento?", texto("frase_dinero"), ""),
+                 ("¿En qué fase está?", frase_fase, ""),
+                 ("¿Tiene financiamiento?", texto("frase_dinero"), detalle_financiamiento),
                  ("¿Cuándo termina?", fila["cuando"], ""),
                  ("¿Cómo va?", f'{fila["estado"]}. {fila["estado_motivo"]} {texto("frase_programacion")}'.strip(), ""),
                  ("¿Qué problemas reporta?", texto("frase_problemas"), detalle_problema)]
@@ -747,6 +867,12 @@ def ficha(fila):
             f"- **UEI:** {fila['uei'] or 'sin dato'} · **OPMI:** {fila['opmi'] or 'sin dato'}\n"
             + linea_gasto +
             f"- **Modalidad:** {fila['modalidad'] or 'sin dato'} · **Registrada en el PMI:** {fila['en_pmi']}\n"
+            f"- **Formato 8 (fase de ejecución):** {fila.get('etapa_f8') or 'no registrado'} · "
+            f"**Formato 9 (cierre):** {fila.get('etapa_f9') or 'no registrado'} · "
+            f"**Expediente técnico:** {fila.get('expediente_tecnico') or 'sin dato'}\n"
+            f"- **Lectura del 12-B (Proceso 10):** {fila.get('lectura_12b', 'sin dato')}"
+            + (f" — {fila['lectura_porque']}" if fila.get("lectura_porque") else "") + "\n"
+            f"- **PMI (montos programados):** año 1 {millones(fila['pmi_1'])} · años 2 a 4 {millones(fila['pmi_siguientes'])}\n"
             f"- **Brecha (texto del MEF):** {fila['brecha'] or 'sin dato'}")
         # Avance que declara la entidad (12-B) frente a lo gastado: aproximación al valor ganado
         if pd.notna(fila.get("avance_ejecucion")) and pd.notna(fila.get("fecha_declaracion")):
@@ -763,7 +889,8 @@ def ficha(fila):
             st.markdown(f"**Último 12-B ({fila['fecha_12b']:%d/%m/%Y})**")
             for etq, col in [("Situación", "situacion_12b"), ("Problemas", "problema_12b"), ("Acciones", "acciones_12b")]:
                 if fila[col]:
-                    st.markdown(f"*{etq}:* {fila[col][:600]}")
+                    # «<br>» separa la categoría del detalle en los 12-B consultados en vivo (EsSalud, Proceso 11)
+                    st.markdown(f"*{etq}:* {fila[col].replace('<br>', ' — ')[:600]}")
 
 # ============================================================
 # PASO 5.4b: La lista de proyectos (una fila por proyecto). Al hacer clic en una fila se abre su ficha (nivel 4).
@@ -775,9 +902,17 @@ tabla = pd.DataFrame({
     "Estado": mostrar["estado"].map(lambda e: f"{ESTADOS[e][1]} {e}"),     # el símbolo acompaña al nombre del estado
     "Proyecto": mostrar["que_es"],
     "Costo (S/)": mostrar["costo"].round(0),
-    # Las mismas dos medidas de "¿Cuánto se ha ejecutado?" en la ficha (el avance declarado queda para especialistas)
+    # Fase y lugar en el orden de prioridad del MEF (Proceso 10)
+    "Fase": mostrar["fase_nombre"],
+    "Prioridad MEF": mostrar["prelacion"].astype(float),        # vacío (no «None») en las detenidas, que no tienen grupo
+    # Componentes deducidos (Proceso 10): un punto verde por cada uno que tiene (la casilla gris se veía poco)
+    **{nombre: mostrar[f"comp_{clave}"].map({True: "🟢", False: ""})
+       for nombre, clave in (("Infra", "infra"), ("Equipo", "equipo"), ("Gestión", "gestion"))},
+    # Las mismas dos medidas de "¿Cuánto se ha ejecutado?" en la ficha
     "Ejecución 2026": mostrar["ejec_2026"].clip(0, 100).round(0),            # vacío si no tiene presupuesto 2026
     "Ejecución acumulada": mostrar["ejec_acum"].clip(0, 100).round(0),
+    # Avance que declara la entidad en el 12-B, o lo que dice su texto si contradice al número
+    "Avance (12-B)": mostrar["avance_12b"],
     "Atraso (meses)": mostrar["meses_atraso"].fillna(0).astype(int),   # 0 si no está atrasado (la tabla mostraría "None")
     "Lugar": mostrar["lugar"],
 })
@@ -797,7 +932,8 @@ tabla.insert(2, "A", mostrar["id"].isin(set(st.session_state["port_A"])))
 tabla.insert(3, "B", mostrar["id"].isin(set(st.session_state["port_B"])))
 # La clave cambia con los filtros y después de abrir cada ficha: así la lista vuelve a mostrarse sin "Ver ficha" marcado
 version = st.session_state.get("version_lista", 0)
-clave_lista = f"lista_{version}_" + str(abs(hash((nivel, cartera_elegida, pliego, unidad, tipo, estado, len(vista), orden, busqueda,
+clave_lista = f"lista_{version}_" + str(abs(hash((nivel, cartera_elegida, pliego, unidad, tipo, componentes_elegidos, fase_elegida,
+                                                   presupuesto, mostrar_ejecutadas, estado, len(vista), orden, busqueda,
                                                    tuple(mostrar["id"].head(3))))))
 editada = st.data_editor(
     tabla, hide_index=True, width="stretch", height=min(38 + 35 * len(tabla), 460), key=clave_lista,
@@ -811,6 +947,18 @@ editada = st.data_editor(
         "Estado": st.column_config.TextColumn("Estado", width=150),
         "Proyecto": st.column_config.TextColumn("Proyecto", width=290),
         "Costo (S/)": st.column_config.NumberColumn("Costo (S/)", format="localized", width=95),
+        "Fase": st.column_config.TextColumn("Fase", width=170, help="En qué fase está, según el 12-B y el registro en el MEF"),
+        "Prioridad MEF": st.column_config.NumberColumn(
+            "Prioridad MEF", format="%d", width=85,
+            help="Grupo en el orden de prelación del MEF para el Programa Multianual de Inversiones (Directiva "
+                 "001-2019-EF/63.01, art. 15.2): 1 = ejecución física terminada … 8 = en formulación. Vacío: detenida"),
+        "Infra": st.column_config.TextColumn("Infra.", width=50, help="🟢 = incluye infraestructura (obras). Deducido del nombre y la descripción"),
+        "Equipo": st.column_config.TextColumn("Equipo", width=55, help="🟢 = incluye equipamiento (equipos, mobiliario o vehículos)"),
+        "Gestión": st.column_config.TextColumn("Gestión", width=60, help="🟢 = incluye gestión e intangibles (software, capacitación…)"),
+        "Avance (12-B)": st.column_config.TextColumn(
+            "Avance (12-B)", width=150,
+            help="Avance de ejecución que declara la entidad en el 12-B. Si su texto dice otra cosa (por ejemplo, «ya ejecutada» "
+                 "con 0 %), se indica «Según el texto…» y el porcentaje entre paréntesis"),
         "Ejecución 2026": st.column_config.ProgressColumn("Ejecución 2026", min_value=0, max_value=100, format="%.0f%%",
                                                           help="Lo gastado en 2026 frente a su presupuesto 2026", width=115),
         "Ejecución acumulada": st.column_config.ProgressColumn("Ejecución acumulada", min_value=0, max_value=100, format="%.0f%%",
@@ -856,11 +1004,13 @@ if pedido and not abierta and st.session_state.get("ficha_enlace") != pedido:
 # ============================================================
 INDICADORES = ["Proyectos", "Costo total", "Presupuesto 2026", "Ejecución 2026 (gastado ÷ presupuesto 2026)",
                "Ejecución acumulada (gastado ÷ costo)", "Cambio de costo desde su aprobación", "Atrasados",
-               "Atraso típico de los atrasados", "Con problemas reportados", "Con obras paralizadas según la Contraloría"]
+               "Atraso típico de los atrasados", "Con problemas reportados", "Con obras paralizadas según la Contraloría",
+               "Ya ejecutadas según el 12-B (no necesitan financiamiento)", "Componentes: infraestructura · equipamiento · gestión",
+               "Programado en el PMI para 2027–2029"]
 
 def comparar(grupos):
     """Los mismos indicadores para cada portafolio, uno al lado del otro.
-    Antes: los proyectos de A y los de B | Después: una tabla de 10 filas (indicadores) × una columna por portafolio.
+    Antes: los proyectos de A y los de B | Después: una tabla de 13 filas (indicadores) × una columna por portafolio.
     Entre paréntesis, el porcentaje de los proyectos del portafolio."""
     columnas = {}
     for letra, g in grupos.items():
@@ -877,7 +1027,10 @@ def comparar(grupos):
             cuota(r["n_atrasados"]),
             meses(r["mediana_meses_atraso"]) if pd.notna(r["mediana_meses_atraso"]) else "—",
             cuota(r["n_reporta_problemas"]),
-            cuota(g["paralizada_cgr"].sum())]
+            cuota(g["paralizada_cgr"].sum()),
+            cuota(g["ya_ejecutada"].sum()),
+            f'{int(g["comp_infra"].sum()):,} · {int(g["comp_equipo"].sum()):,} · {int(g["comp_gestion"].sum()):,}',
+            millones(g["pmi_siguientes"].sum())]
     return pd.DataFrame({"Indicador": INDICADORES, **columnas})
 
 def agregar_lista(letra, ids):
@@ -916,12 +1069,15 @@ def copiar_nombre(letra):
 
 portafolio = {letra: st.session_state[f"port_{letra}"] for letra in LETRAS}
 hay_portafolio = any(portafolio.values())
+seccion("Mis portafolios", "#c8a0f5")
 with st.expander("Mis portafolios: comparar A y B"
                  + (f" (A: {plural(len(portafolio['A']), 'proyecto')} · B: {plural(len(portafolio['B']), 'proyecto')})"
                     if hay_portafolio else ""), expanded=hay_portafolio):
     st.markdown("Arma dos grupos de proyectos y compáralos con los mismos indicadores: por ejemplo, las obras que priorizas "
                 "frente al resto, o dos gobiernos regionales. Marca proyectos en las columnas **A** y **B** de la lista "
-                "(en cualquier selección) o agrega de una vez todos los de la lista.")
+                "(en cualquier selección) o agrega de una vez todos los de la lista. Para un portafolio de **solo equipamiento**, "
+                "**solo infraestructura** o **mixto**, elige primero esa opción en «Componentes» y después agrega la lista. "
+                "Las ya ejecutadas no entran, salvo que actives «Mostrar las ya ejecutadas».")
     for columna, letra in zip(st.columns(2), LETRAS):
         if f"campo_nombre_{letra}" not in st.session_state:
             st.session_state[f"campo_nombre_{letra}"] = st.session_state[f"nombre_{letra}"]
@@ -981,6 +1137,7 @@ with st.expander("Mis portafolios: comparar A y B"
 #   coordenadas, del color de su estado. Antes: lat y lon de cada proyecto | Después: puntos en el mapa del Perú;
 #   al pasar el cursor, nombre, estado, costo y avance
 # ============================================================
+seccion("Mapa", "#97f0c0")
 with st.expander("Mapa: ¿dónde están los proyectos de la lista?", expanded=True):
     puntos = vista.dropna(subset=["lat", "lon"])
     if len(puntos):

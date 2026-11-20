@@ -38,18 +38,26 @@ def a_enlace(portafolios, nombres):
 
 def a_csv(portafolios, nombres, proyectos):
     """Archivo CSV con una fila por proyecto y portafolio (un proyecto puede estar en A y en B).
-    Antes: listas de códigos | Después: texto CSV con columnas portafolio, nombre_portafolio, cui, proyecto, estado y costo.
+    Antes: listas de códigos | Después: texto CSV con columnas portafolio, nombre_portafolio, cui, proyecto, estado, costo,
+    fase, prioridad del MEF, componentes, avance del 12-B y presupuesto (las columnas que faltan en la tabla quedan vacías).
     Se guarda en UTF-8 con marca (utf-8-sig) para que Excel muestre bien las tildes."""
     datos = proyectos.set_index("id")
+    extra = {"fase": "fase_nombre", "prioridad_mef": "prelacion", "componentes": "componentes", "avance_12b": "avance_12b",
+             "presupuesto_2026_soles": "pim_2026", "pmi_2027_2029_soles": "pmi_siguientes"}
     filas = []
     for letra in LETRAS:
         for cui in portafolios[letra]:
             if cui in datos.index:
                 p = datos.loc[cui]
-                filas.append({"portafolio": letra, "nombre_portafolio": nombres[letra], "cui": cui,
-                              "proyecto": p["que_es"], "estado": p["estado"], "costo_soles": round(float(p["costo"] or 0))})
-    return pd.DataFrame(filas, columns=["portafolio", "nombre_portafolio", "cui", "proyecto", "estado", "costo_soles"]
-                        ).to_csv(index=False).encode("utf-8-sig")
+                fila = {"portafolio": letra, "nombre_portafolio": nombres[letra], "cui": cui,
+                        "proyecto": p["que_es"], "estado": p["estado"], "costo_soles": round(float(p["costo"] or 0))}
+                for nombre, columna in extra.items():
+                    valor = p[columna] if columna in p.index else None      # la columna puede no estar en la tabla
+                    vacio = valor is None or (not isinstance(valor, str) and pd.isna(valor)) or valor == ""
+                    fila[nombre] = "" if vacio else (round(float(valor)) if nombre.endswith("_soles") else valor)
+                filas.append(fila)
+    columnas = ["portafolio", "nombre_portafolio", "cui", "proyecto", "estado", "costo_soles", *extra]
+    return pd.DataFrame(filas, columns=columnas).to_csv(index=False).encode("utf-8-sig")
 
 
 def leer_csv(contenido):

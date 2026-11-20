@@ -8,7 +8,7 @@ preguntas en lenguaje simple** (¿qué es?, ¿qué problema resuelve?, ¿cuánto
 termina?, ¿cómo va?) para quienes deciden o supervisan sin ser especialistas en Invierte.pe.
 
 - **Usuario objetivo:** alta dirección, cooperantes, asesores, periodistas y ciudadanía. **No** es el especialista de la OPMI.
-- **Alcance actual:** las 26 412 inversiones activas del gobierno nacional (12 731) y de los gobiernos regionales (13 681), con datos al 08/11/2026, más las obras paralizadas de la Contraloría (corte al 30/06/2026; `scripts/08_contraloria.py`).
+- **Alcance actual:** las 26 250 inversiones activas del gobierno nacional (12 695) y de los gobiernos regionales (13 555), con datos al 20/11/2026 (las fechas están en `data/procesado/fechas.json`), más las obras paralizadas de la Contraloría (corte al 30/06/2026; `scripts/08_contraloria.py`).
 
 ## Cómo correrlo
 
@@ -22,9 +22,17 @@ uv run --with-requirements requirements.txt python scripts/probar_app.py # prueb
 Sin `uv`, se puede usar `pip install -r requirements.txt` y después `streamlit run app/app.py`.
 
 - Los archivos procesados vienen en `data/procesado/`, así que la app corre sin descargar nada.
-- Para rehacer la base: `scripts/01_descargar.py` (baja ≈ 512 MB a `data/crudo/`, que no se sube), luego `03_preparar.py`, `09_gasto_empresas.py` (gasto de EsSalud y FONAFE, que no usan el SIAF; ≈ 12 min) y `04_traducir.py`.
+- Para rehacer la base, en este orden: 1 → 11 → 3 → 9 → 10 → 4 → 7 → 8.
+  - `01_descargar.py` baja ≈ 537 MB a `data/crudo/` (no se sube) y anota la fecha en `fechas.json`.
+  - `11_12b_en_vivo.py` consulta el 12-B de EsSalud en vivo (≈ 16 min).
+  - `03_preparar.py` arma la base. Si el MEF publica el 12-B vacío, usa `respaldo_12b.parquet`.
+  - `09_gasto_empresas.py` trae el gasto de EsSalud y FONAFE, que no usan el SIAF (≈ 20 min).
+  - `10_fases_componentes.py` decide si ya se ejecutó, los componentes, la fase y la prioridad del MEF.
+  - Después: `04_traducir.py`, `07_indicadores.py` y `08_contraloria.py`.
 - **pandas:** los procesados se generan con pandas 2.x (`uv run --with "pandas<3" --with pyarrow python scripts/…`). Con pandas 3, las expresiones regulares del Proceso 7 usan otro motor y 53 textos del 12-B cambian de clase de problema.
 - **Empresas públicas:** EsSalud y FONAFE no registran su gasto en el SIAF. Su gasto viene de su reporte a FONAFE (Proceso 9); si no hay reporte, la ejecución es «sin dato», nunca 0 %.
+- **Ya ejecutadas:** no basta el porcentaje del 12-B. El Proceso 10 lee su texto; por ejemplo, 308 inversiones de EsSalud de la pandemia tienen 0 % y su texto dice «ejecutadas». Las ya ejecutadas se ocultan en la app (interruptor) porque no necesitan financiamiento. Toda regla nueva se revisa leyendo los textos distintos que clasifica.
+- **Prioridad del MEF:** el orden de prelación de la Directiva 001-2019-EF/63.01, art. 15.2 (9 grupos). «Ejecutabilidad» no es un término de esa norma.
 
 ## Dónde está cada cosa
 

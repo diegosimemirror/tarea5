@@ -15,6 +15,7 @@
 # pandas: tablas; pyarrow: leer y guardar parquet (se instalan una vez)
 from pathlib import Path
 import sys
+import json   # json: leer la fecha de los datos (data/procesado/fechas.json, la guarda el Proceso 1)
 import pandas as pd
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -22,7 +23,8 @@ RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ / "app"))
 from resumen_cartera import resumen, proporcion, GRUPOS_FIN
 PROCESADO, DOCS = RAIZ / "data" / "procesado", RAIZ / "docs"
-HOY = pd.Timestamp("2026-11-10")      # misma fecha de referencia que el Proceso 4
+# Misma fecha de referencia que el Proceso 4: la de la descarga de los datos del MEF (Proceso 1)
+HOY = pd.Timestamp(json.loads((PROCESADO / "fechas.json").read_text(encoding="utf-8"))["mef"])
 TODO = "PORTAFOLIO TOTAL"
 
 def millones(x):
@@ -210,9 +212,11 @@ print("7.6 P5:", ind["financiamiento"].value_counts().to_dict())
 vencido = inv["fin"].notna() & (inv["fin"] < HOY)
 ind["fin"] = inv["fin"]
 ind["meses_desde_fin"] = ((HOY - inv["fin"]).dt.days / 30.44).round().where(vencido)
-atrasado = vencido & (ind["avance"] < 95)
-# "atrasado" es la misma regla del estado "Atrasado" del Proceso 4 (3 380): se cuenta con esta marca y no con los meses,
-# porque los que vencieron hace menos de medio mes quedan en 0 meses al redondear
+atrasado = inv["estado"] == "Atrasado"
+# "atrasado" es el estado "Atrasado" del Proceso 4 (venció y tiene menos de 95 % de avance, y el 12-B no dice que ya se
+# ejecutó): se cuenta con esta marca y no con los meses, porque los que vencieron hace menos de medio mes quedan en 0 meses
+# al redondear. Antes: vencido y avance < 95 (contaba como atrasadas las que el 12-B da por ejecutadas) | Después: el estado
+assert (atrasado <= vencido).all(), "un atrasado sin fecha vencida"
 ind["atrasado"] = atrasado
 ind["meses_atraso"] = ind["meses_desde_fin"].where(atrasado, 0).where(inv["fin"].notna())
 
@@ -390,7 +394,7 @@ pct = lambda x: f"{x:.0%}" if pd.notna(x) else "sin dato"
 n = lambda x: f"{int(x):,}".replace(",", " ")
 lineas = [
     "# Indicadores de cartera (enfoque de portafolio)", "",
-    f"> Generado por `scripts/07_indicadores.py`. Gobierno nacional y gobiernos regionales, datos del MEF al 08/11/2026, fecha de referencia {HOY:%d/%m/%Y}.",
+    f"> Generado por `scripts/07_indicadores.py`. Gobierno nacional y gobiernos regionales, datos del MEF al {HOY:%d/%m/%Y} (fecha de descarga, que es también la fecha de referencia).",
     "> Las preguntas siguen la numeración del founder; la P6 (alineamiento estratégico) queda fuera.", "",
     "## Portafolio total (gobierno nacional y gobiernos regionales)", "",
     f"**{n(t['n'])} inversiones**, con un costo actualizado de **{millones(t['costo'])}**.", "",

@@ -12,17 +12,23 @@
 # pandas: tablas
 from pathlib import Path
 import re
+import json   # json: leer la fecha de los datos (data/procesado/fechas.json, la guarda el Proceso 1)
 import pandas as pd
 
 RAIZ = Path(__file__).resolve().parents[1]
 PROCESADO = RAIZ / "data" / "procesado"
-HOY = pd.Timestamp("2026-11-10")
+# Fecha de referencia = fecha de descarga de los datos del MEF. Antes: escrita a mano (10/11/2026) | Después: la del Proceso 1
+HOY = pd.Timestamp(json.loads((PROCESADO / "fechas.json").read_text(encoding="utf-8"))["mef"])
 CIERRE_ANIO = pd.Timestamp("2026-12-31")
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
 base = pd.read_parquet(PROCESADO / "inversiones.parquet")
-# El único CUI repetido (2022788) tiene dos filas distintas: se les da un identificador propio a cada una
-base["id"] = base["id"] + base.groupby("id").cumcount().map(lambda n: "" if n == 0 else f"-{n + 1}")
+assert base["id"].is_unique, "identificador repetido: el Proceso 3 debe darle uno propio a cada fila"
+# Lectura del 12-B, componentes, fase y prioridad del MEF (Proceso 10): se unen por el identificador
+#   Antes: la base del Proceso 3 | Después: la misma, con ya_ejecutada, componentes, fase y prelacion
+fases = pd.read_parquet(PROCESADO / "fases_componentes.parquet")
+base = base.merge(fases, on="id", how="left", validate="one_to_one")
+assert base["fase"].notna().all(), "falta la fase de alguna inversión: corre el Proceso 10 antes que este"
 
 # ============================================================
 # PASO 4.0: Completar el gasto de las empresas públicas con lo que reportan a FONAFE (Proceso 9)
@@ -254,13 +260,17 @@ def situacion_plazo(f):
 
 # ============================================================
 # PASO 4.6: ¿Cómo va?  (un estado en palabras simples y su motivo)
-#   Orden de prioridad: Sin datos de avance > Atrasado > En riesgo este año > Sin reportes recientes > Por cerrar >
-#   Sin presupuesto este año > En marcha. "Sin datos de avance" solo aparece en empresas públicas sin gasto publicado.
+#   Orden de prioridad: Ya ejecutada > Sin datos de avance > Atrasado > En riesgo este año > Sin reportes recientes >
+#   Por cerrar > Sin presupuesto este año > En marcha. "Sin datos de avance" solo aparece en empresas públicas sin gasto
+#   publicado. "Ya ejecutada" sale del Proceso 10: el 12-B (texto o número) o el formato de cierre dicen que ya se ejecutó.
 #   Reglas de ejemplo, por validar con el usuario.
 # ============================================================
 DIAS_AL_CIERRE = (CIERRE_ANIO - HOY).days
 
 def estado(f):
+    if f["ya_ejecutada"]:
+        # Antes: 0 % de avance -> "Atrasado" o "Sin datos de avance" | Después: "Ya ejecutada" (sale de los portafolios)
+        return "Ya ejecutada", "Según su último reporte, ya se ejecutó: solo falta el cierre formal."
     av, fin, pim, dev26 = avance(f), f["fin"], f["pim_2026"] or 0, f["dev_2026"] or 0
     # Empezado: ya gastó algo o la entidad declara avance. Antes solo contaba el gasto: un proyecto con 94 % de avance
     # declarado y sin gasto en el SIAF (EsSalud) quedaba como "no ha empezado".
@@ -300,6 +310,8 @@ salida.to_parquet(PROCESADO / "cinco_preguntas.parquet", index=False)
 # Verificación: cómo quedan repartidos los estados y tres ejemplos
 print("Estados:\n", salida["estado"].value_counts().to_string())
 print("Problemas que usaron una plantilla:", int((~salida["problema"].str.startswith(("Contribuye", "No tiene"))).sum()), "de", len(salida))
-for cui in ["2613205", "2534846", "2702890"]:
+for cui in ["2613205", "2534846", "2702890", "2300016"]:
+    if not (salida["cui"] == cui).any():          # con datos nuevos, un ejemplo puede haberse cerrado
+        continue
     f = salida[salida["cui"] == cui].iloc[0]
     print(f"\n[{cui}] ¿Qué es? {f.que_es} · {f.lugar}\n  ¿Qué problema? {f.problema}\n  ¿Cuánto? {f.cuanto}\n  ¿Cuándo? {f.cuando}\n  ¿Cómo va? {f.estado}: {f.estado_motivo}")

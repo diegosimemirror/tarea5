@@ -115,3 +115,62 @@ Ninguna fila se eliminó: el gobierno nacional entra completo, con sus 12 731 in
 - **Resto (SIAF), 80 inversiones:** pasan de «Sin presupuesto este año» a «En marcha» (70) o «Sin reportes recientes» (10). Corrección de la regla: «empezado» ahora también cuenta el avance declarado, no solo el gasto. Antes, un Tambo con 83 % de avance declarado figuraba como «no ha empezado».
 
 **Lo que no se cambió:** el avance que declara la entidad sigue en «Para especialistas» (decisión del 11/11/2026), salvo en las inversiones «Sin dato», donde es el único dato y se muestra en «¿Cuánto se ha ejecutado?».
+
+## 9. ¿Ya se ejecutó?, componentes, fase y prioridad (Procesos 10 y 11, 20/11/2026)
+
+**Hallazgo:** el porcentaje de avance del 12-B no basta para saber si una inversión ya se ejecutó. En EsSalud, 308 inversiones de la pandemia tienen 0 % y su texto dice «se trata de inversiones ejecutadas en el marco de la pandemia por COVID-19». Otras 47 dicen «ejecutado», «culminado» o «en recepción» con 0 %. Leer solo el número las mostraba como pendientes de financiar. El founder pidió diferenciarlas rápido, porque ya no forman parte de ningún portafolio.
+
+**Actualización de datos (20/11/2026):** hay 26 250 inversiones activas (12 695 nacionales y 13 555 regionales), 162 menos que el 08/11.
+
+| # | Qué se revisó | Qué se encontró | Qué se hizo |
+|---|---|---|---|
+| 1 | Archivo del 12-B | Desde el 18/11/2026, el MEF publica `FORMATO_12B.csv` vacío (solo la fila de títulos, 1 092 bytes) | Se usa su última copia válida (08/11/2026; 20 009 inversiones), guardada en `respaldo_12b.parquet`. Cuando el archivo vuelva a traer filas, el Proceso 3 renueva el respaldo |
+| 2 | Textos del 12-B abierto | No traen la categoría de la situación (p. ej., «Inversión culminada / 100% ejecutada físicamente») ni los próximos pasos (p. ej., «Registrar cierre de inversión»): `ACC_PROBLEMA` coincide con los próximos pasos solo en 119 de 659 inversiones de EsSalud | Proceso 11: el 12-B de EsSalud se consulta en vivo (servicio que alimenta la página del 12-B): 798 consultadas, 659 con 12-B, 139 sin 12-B, 0 textos dañados |
+| 3 | Lectura del texto | Reglas de palabras, revisadas leyendo todos los textos distintos de EsSalud y muestras del resto. Errores corregidos al revisar: «cierre por pérdida de vigencia» (no es ejecutada), «proyecto ejecutado bajo la modalidad de contrata» (habla de la modalidad), «priorización o cierre» (evaluación abierta), «culminada, pendiente pago de liquidación» (aún necesita dinero), «etapa 1 culminada» o «componente de obra culminado» (solo una parte), «riesgo de desactivación» (no es una decisión) | Lectura en 9 clases, con la frase que la sustenta (columna `lectura_porque`). EsSalud: igual al Excel revisado a mano el 19/11 en las 798 |
+| 4 | Ya ejecutada | Por el texto: 2 789; por el formato de cierre (formato 9) pendiente de liquidación: 1 887; por un avance declarado de 100 % o más: 298 | **4 974 ya ejecutadas** (S/ 53,6 mil millones de costo): estado nuevo «Ya ejecutada», ocultas en la app salvo que se active el interruptor. EsSalud: 352 |
+| 5 | Componentes | El MEF no publica los componentes en sus datos abiertos | Se deducen del nombre (IOARR: «ACCIÓN DE ACTIVOS», 10 076) y de la descripción técnica (proyectos, 14 462); por la tipología, 153 (aproximado); sin información suficiente, 1 559 |
+| 6 | Fase | El formato 8 trae la etapa del registro en la fase de ejecución (A: antes del expediente; B: expediente técnico; C: ejecución física) y el formato 9, la etapa del cierre | Fase = la más avanzada entre la categoría del 12-B, la etapa del formato 8 y el avance físico declarado |
+| 7 | Prioridad | El orden de prelación del PMI está en la Directiva N.° 001-2019-EF/63.01, art. 15.2 (9 grupos; EsSalud y FONAFE lo aplican por el art. 17.1). «Ejecutabilidad» no es un término de esa norma: el MEF lo usa al asignar presupuesto y como puntaje del ejecutor | Grupo 1 a 8 por inversión (el 9, ideas, no está en estos datos); las detenidas quedan fuera del orden |
+
+**Resultados (26 250 inversiones):**
+
+- **Lectura del 12-B:**
+  - en proceso 13 452
+  - sin 12-B 6 034
+  - ya ejecutada 4 974
+  - terminada, en recepción o liquidación 1 031
+  - ejecución parcial 442
+  - sin información en el texto 207
+  - perdió vigencia o en evaluación 68
+  - no se ejecutará 39
+  - obra concluida con pagos pendientes (APP) 3
+- **Componentes:**
+  - infraestructura + equipamiento 7 139
+  - solo infraestructura 6 259
+  - solo equipamiento 4 604
+  - los tres 4 463
+  - infraestructura + gestión 1 128
+  - equipamiento + gestión 772
+  - solo gestión e intangibles 298
+  - sin información 1 587
+- **Fase:**
+  - idea o en estudio 92
+  - viable o aprobada 4 176
+  - expediente en elaboración 3 320
+  - lista para contratar 6 340
+  - en ejecución 6 208
+  - terminada 1 032
+  - ya ejecutada 4 974
+  - detenida 108
+- **Prioridad del MEF (grupo: inversiones):**
+  - 1: 6 006
+  - 2: 2 719
+  - 3: 1 875
+  - 4: 1 614
+  - 5: 6 340
+  - 6: 3 320
+  - 7: 4 176
+  - 8: 92
+  - fuera del orden: 108
+
+**Límites:** son reglas de palabras sobre textos que escriben las entidades; la ficha muestra la frase que sustenta cada lectura para que se pueda comprobar. Fuera de EsSalud, el 12-B es del 08/11/2026 (el MEF no publica uno más reciente) y no trae la categoría ni los próximos pasos. **Ningún dato del MEF se modificó ni se eliminó:** la lectura, los componentes y la fase van en columnas nuevas (`fases_componentes.parquet`).

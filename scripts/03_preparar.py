@@ -12,7 +12,11 @@
 # pandas: tablas; pyarrow: guardar en formato parquet, más liviano y rápido que CSV (se instalan una vez)
 from pathlib import Path
 import re
+import sys
+import json   # json: leer y anotar las fechas de los datos (data/procesado/fechas.json)
 import pandas as pd
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from privacidad import ocultar   # ocultar(): nombres de personas y correos -> «[nombre omitido]», «[correo omitido]»
 
 RAIZ = Path(__file__).resolve().parents[1]
 CRUDO, PROCESADO = RAIZ / "data" / "crudo", RAIZ / "data" / "procesado"
@@ -41,6 +45,10 @@ inv = inv.drop_duplicates()
 print("3.2 Filas idénticas eliminadas:", antes - len(inv))
 inv["id"] = inv["CODIGO_UNICO"].where(inv["CODIGO_UNICO"] != "", "SNIP-" + inv["CODIGO_SNIP"])
 print("    Identificadores repetidos que quedan:", inv["id"].duplicated().sum(), "| sin CUI (usan SNIP):", (inv["CODIGO_UNICO"] == "").sum())
+# Un CUI repetido con filas distintas (p. ej., 2022788): cada fila recibe un identificador propio, para que los Procesos 10
+# y 4 puedan unir sus resultados fila por fila. Antes: '2022788' dos veces | Después: '2022788' y '2022788-2'
+inv["id"] = inv["id"] + inv.groupby("id").cumcount().map(lambda n: "" if n == 0 else f"-{n + 1}")
+assert inv["id"].is_unique, "quedó un identificador repetido"
 
 # ============================================================
 # PASO 3.3: Convertir números y fechas
@@ -53,6 +61,8 @@ numeros = {"MONTO_VIABLE": "viable", "COSTO_ACTUALIZADO": "costo", "CTRL_CONCURR
            # montos de la programación multianual (PMI_ANIO_1 a 4: los años siguientes, según el nombre de la columna)
            "MONTO_ET_F8": "monto_et", "MONTO_LAUDO": "laudo", "MONTO_FIANZA": "fianza", "CERTIF_ANIO_ACTUAL": "certificado_2026",
            "PMI_ANIO_1": "pmi_1", "PMI_ANIO_2": "pmi_2", "PMI_ANIO_3": "pmi_3", "PMI_ANIO_4": "pmi_4",
+           # Presupuesto inicial (PIA) y compromiso anual 2026: para mostrar si la inversión tiene presupuesto asignado
+           "PIA_ANIO_ACTUAL": "pia_2026", "COMPROM_ANUAL_ANIO_ACTUAL": "comprometido_2026",
            # Avance de ejecución que declara la entidad en el 12-B: avance de TODOS los componentes (productos, gestión del
            # proyecto, expediente técnico, supervisión y liquidación), valorizado a su costo. Verificado con el detalle por
            # componente del SSI (verDetEstimacion) en 3 proyectos. AVANCE_FISICO es lo mismo, pero solo con los productos.
@@ -61,7 +71,8 @@ for col, nuevo in numeros.items():
     inv[nuevo] = pd.to_numeric(inv[col], errors="coerce")
 for col, nuevo in {"FECHA_VIABILIDAD": "fecha_viable", "FEC_INI_EJECUCION": "inicio", "FEC_FIN_EJECUCION": "fin",
                    "FEC_INI_EJEC_FISICA": "inicio_fisico", "FEC_FIN_EJEC_FISICA": "fin_fisico",
-                   "ULT_FEC_DECLA_ESTIM": "fecha_declaracion"}.items():   # fecha en que la entidad declaró su avance
+                   "ULT_FEC_DECLA_ESTIM": "fecha_declaracion",            # fecha en que la entidad declaró su avance
+                   "FEC_REG_F9": "fecha_f9"}.items():                     # fecha en que registró el formato de cierre
     inv[nuevo] = pd.to_datetime(inv[col], errors="coerce")
 inv["dev_acumulado"] = inv["dev_hasta_2025"].fillna(0) + inv["dev_2026"].fillna(0)
 
@@ -132,49 +143,73 @@ todas.to_parquet(PROCESADO / "brechas.parquet", index=False)
 print("3.6b Todas las brechas:", todas.shape, "| inversiones:", todas["cui"].nunique())
 
 # ============================================================
-# PASO 3.7: Unir el último seguimiento (formato 12-B nacional)
-#   Los textos vienen con la fecha al inicio: "[21/01/2026] En proceso de liquidación" -> se separa la fecha
+# PASO 3.7: Unir el último seguimiento (formato 12-B)
+#   Fuente 1: el archivo de datos abiertos FORMATO_12B.csv. Los textos vienen con la fecha al inicio:
+#             "[21/01/2026] En proceso de liquidación" -> se quita la fecha y se ocultan nombres y correos.
+#   Respaldo: si el MEF publica el archivo vacío (así está desde el 18/11/2026: solo la fila de títulos), se usa la última
+#             copia válida, guardada en data/procesado/respaldo_12b.parquet (ya limpia). Con un archivo válido, el
+#             respaldo se renueva. La fecha del 12-B que se usó queda en fechas.json ("f12b").
+#   En vivo:  EsSalud (Proceso 11, f12b_en_vivo.parquet): reemplaza sus textos por los de la consulta en vivo, que traen
+#             la categoría de la situación y los próximos pasos (el archivo abierto no los trae).
 # ============================================================
 # Programación mensual del año (para el Proceso 7). Significado deducido del nombre, porque el diccionario del MEF da error 404:
 #   MONTO_PROGRAMADO_m: lo que se programó gastar en el mes m | MONTO_ACTUALIZADO_m: la programación ya ajustada
-#   DEV_ENE_AÑO_VIG...: lo que se gastó (devengó) cada mes. Se suman de enero a octubre (los meses cerrados al 08/11/2026).
+#   DEV_ENE_AÑO_VIG...: lo que se gastó (devengó) cada mes. Se suman de enero a octubre (los meses cerrados).
 #   El devengado de cada mes de 2026 (enero a noviembre) se guarda también por separado: con él se calcula lo gastado
 #   hasta el mes en que la entidad declaró su avance, para comparar avance y gasto en la misma fecha (Proceso 7).
 MESES_DEV = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SET", "OCT", "NOV"]
 cols_dev = [f"DEV_{m}_AÑO_VIG" for m in MESES_DEV]
 cols_mes = [f"MONTO_PROGRAMADO_{i}" for i in range(1, 11)] + [f"MONTO_ACTUALIZADO_{i}" for i in range(1, 11)] + cols_dev
 cols12 = ["CODIGO_UNICO", "FECHA_ULT_ACT_F12B", "ULT_ESTADO_SITUACIONAL", "ULT_PROBLEMA", "ACC_PROBLEMA"]
+RESPALDO_12B = PROCESADO / "respaldo_12b.parquet"
+FECHAS = PROCESADO / "fechas.json"
+fechas = json.loads(FECHAS.read_text(encoding="utf-8")) if FECHAS.exists() else {}
 f12b = pd.read_csv(CRUDO / "FORMATO_12B.csv", dtype=str, encoding="utf-8-sig", keep_default_na=False, usecols=cols12 + cols_mes)
-f12b = f12b[f12b["CODIGO_UNICO"].isin(inv["CODIGO_UNICO"])]
-# sum(axis=1): suma los 10 meses de cada fila. Antes: 10 columnas por concepto | Después: 1 total de enero a octubre
-mensual = {nombre: f12b[[c for c in cols_mes if c.startswith(prefijo)]].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=1)
-           for nombre, prefijo in [("programado_ene_oct", "MONTO_PROGRAMADO_"), ("reprogramado_ene_oct", "MONTO_ACTUALIZADO_")]}
-dev_mes = f12b[cols_dev].apply(pd.to_numeric, errors="coerce")
-mensual["devengado_ene_oct"] = dev_mes.iloc[:, :10].sum(axis=1, min_count=1)
-for i, c in enumerate(cols_dev, 1):
-    mensual[f"dev_2026_{i:02d}"] = dev_mes[c]          # dev_2026_01 = enero ... dev_2026_11 = noviembre
-# Nombres de personas en los textos (p. ej., "Ing. Juan Pérez"): se reemplazan por "[nombre omitido]" en la copia para mostrar.
-# La regla es prudente: puede ocultar alguna palabra de más, pero no deja nombres a la vista.
-PERSONA = (r"\b(Ing|ING|Sr|SR|Sra|SRA|Srta|Lic|LIC|Arq|ARQ|Dr|DR|Dra|DRA|Econ|ECON|Abog|ABOG|CPC|Mg|MG)\.\s*"
-           r"[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+){0,3}")
-
-# Correos electrónicos (p. ej., "nombre@entidad.gob.pe"): también identifican a personas; se reemplazan por "[correo omitido]".
-CORREO = r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
 
 def sin_fecha(s):
-    """Quita la fecha inicial '[21/01/2026] ' y oculta nombres de personas y correos.
+    """Quita la fecha inicial '[21/01/2026] ' y oculta nombres de personas y correos (módulo privacidad.py).
     Antes: '[21/01/2026] El Ing. Juan Pérez (jperez@x.pe) informa...'
     Después: 'El Ing. [nombre omitido] ([correo omitido]) informa...'"""
-    limpio = texto(s).str.replace(r"^\[\d{2}/\d{2}/\d{4}\]\s*", "", regex=True)
-    limpio = limpio.str.replace(CORREO, "[correo omitido]", regex=True)
-    return limpio.str.replace(PERSONA, lambda m: m.group(1) + ". [nombre omitido]", regex=True)
-f12b = pd.DataFrame({"CODIGO_UNICO": f12b["CODIGO_UNICO"],
-                     "fecha_12b": pd.to_datetime(f12b["FECHA_ULT_ACT_F12B"], errors="coerce"),
-                     "situacion_12b": sin_fecha(f12b["ULT_ESTADO_SITUACIONAL"]),
-                     "problema_12b": sin_fecha(f12b["ULT_PROBLEMA"]),
-                     "acciones_12b": sin_fecha(f12b["ACC_PROBLEMA"]), **mensual})
-inv = inv.merge(f12b, on="CODIGO_UNICO", how="left")
-print("3.7 Con último 12-B:", int(inv["fecha_12b"].notna().sum()), "de", len(inv))
+    return texto(s).str.replace(r"^\[\d{2}/\d{2}/\d{4}\]\s*", "", regex=True).map(ocultar)
+
+if len(f12b):
+    f12b = f12b[f12b["CODIGO_UNICO"].isin(inv["CODIGO_UNICO"])]
+    # sum(axis=1): suma los 10 meses de cada fila. Antes: 10 columnas por concepto | Después: 1 total de enero a octubre
+    mensual = {nombre: f12b[[c for c in cols_mes if c.startswith(prefijo)]].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=1)
+               for nombre, prefijo in [("programado_ene_oct", "MONTO_PROGRAMADO_"), ("reprogramado_ene_oct", "MONTO_ACTUALIZADO_")]}
+    dev_mes = f12b[cols_dev].apply(pd.to_numeric, errors="coerce")
+    mensual["devengado_ene_oct"] = dev_mes.iloc[:, :10].sum(axis=1, min_count=1)
+    for i, c in enumerate(cols_dev, 1):
+        mensual[f"dev_2026_{i:02d}"] = dev_mes[c]          # dev_2026_01 = enero ... dev_2026_11 = noviembre
+    f12b = pd.DataFrame({"cui": f12b["CODIGO_UNICO"],
+                         "fecha_12b": pd.to_datetime(f12b["FECHA_ULT_ACT_F12B"], errors="coerce"),
+                         "situacion_12b": sin_fecha(f12b["ULT_ESTADO_SITUACIONAL"]),
+                         "problema_12b": sin_fecha(f12b["ULT_PROBLEMA"]),
+                         "acciones_12b": sin_fecha(f12b["ACC_PROBLEMA"]), **mensual}).drop_duplicates("cui")
+    f12b.to_parquet(RESPALDO_12B, index=False)               # la copia válida más reciente
+    fechas["f12b"] = fechas.get("mef", "")
+    print("3.7 12-B de datos abiertos:", len(f12b), "inversiones (respaldo renovado)")
+else:
+    f12b = pd.read_parquet(RESPALDO_12B)
+    print(f"3.7 El archivo FORMATO_12B.csv del MEF está vacío: se usa el respaldo ({len(f12b)} inversiones, 12-B al "
+          f"{fechas.get('f12b', 'sin fecha')})")
+# EsSalud en vivo (Proceso 11): sus textos y la fecha de su último 12-B reemplazan a los del archivo (la programación
+# mensual se conserva). Antes (2569571): 'EJECUTADO, SEGÚN LO INFORMADO POR CEABE'
+# Después: 'En proceso de recepción / conformidad técnica <br>EJECUTADO, SEGÚN LO INFORMADO POR CEABE'
+VIVO = PROCESADO / "f12b_en_vivo.parquet"
+if VIVO.exists():
+    vivo = pd.read_parquet(VIVO)
+    textos = ["fecha_12b", "situacion_12b", "problema_12b", "acciones_12b"]
+    f12b = f12b.set_index("cui")
+    nuevos = vivo[~vivo["cui"].isin(f12b.index)].set_index("cui")[textos]
+    f12b = pd.concat([f12b, nuevos])
+    f12b.update(vivo.set_index("cui")[textos])                # update(): reemplaza solo las filas y columnas en vivo
+    f12b = f12b.reset_index().rename(columns={"index": "cui"})
+    fechas["f12b_vivo"] = str(vivo["consultado"].iloc[0])
+    print("    12-B en vivo de EsSalud:", len(vivo), "inversiones, consultadas el", fechas["f12b_vivo"])
+FECHAS.write_text(json.dumps(fechas, ensure_ascii=False, indent=2), encoding="utf-8")
+inv = inv.merge(f12b.rename(columns={"cui": "CODIGO_UNICO"}), on="CODIGO_UNICO", how="left")
+print("    Con último 12-B:", int(inv["fecha_12b"].notna().sum()), "de", len(inv))
 
 # ============================================================
 # PASO 3.8: Guardar solo las columnas que usa la app
@@ -186,6 +221,10 @@ columnas = {
     "FUNCION": "funcion", "DEPARTAMENTO": "departamento", "PROVINCIA": "provincia", "DISTRITO": "distrito",
     "NOMBRE_UF": "uf", "NOMBRE_UEI": "uei", "NOMBRE_OPMI": "opmi", "ALTERNATIVA": "alternativa",
     "EXPEDIENTE_TECNICO": "expediente_tecnico", "INFORME_CIERRE": "informe_cierre", "REGISTRADO_PMI": "en_pmi", "TIENE_F12B": "tiene_12b",
+    # Fase de la inversión (Proceso 10): registro en la fase de ejecución (formato 8 y su etapa: A = antes del expediente
+    # técnico, B = expediente técnico, C = ejecución física) y formato de cierre (formato 9 y su etapa, p. ej. «Pendiente de
+    # liquidación»); tipología del MEF (p. ej., «Establecimientos de salud hospitalarios»)
+    "TIENE_F8": "tiene_f8", "ETAPA_F8": "etapa_f8", "TIENE_F9": "tiene_f9", "ETAPA_F9": "etapa_f9", "DES_TIPOLOGIA": "tipologia",
 }
 salida = inv.rename(columns=columnas)[list(columnas.values()) + [
     "viable", "costo", "ctrl", "dev_hasta_2025", "dev_2026", "dev_acumulado", "pim_2026", "saldo",
@@ -194,6 +233,7 @@ salida = inv.rename(columns=columnas)[list(columnas.values()) + [
     "fecha_12b", "situacion_12b", "problema_12b", "acciones_12b",
     # columnas para los indicadores de cartera (Proceso 7)
     "monto_et", "laudo", "fianza", "certificado_2026", "pmi_1", "pmi_2", "pmi_3", "pmi_4", "inicio_fisico", "fin_fisico",
+    "pia_2026", "comprometido_2026", "fecha_f9",
     "programado_ene_oct", "reprogramado_ene_oct", "devengado_ene_oct",
     # avance declarado por la entidad y gasto mensual de 2026 (avance frente a gasto, Proceso 7)
     "avance_ejecucion", "avance_ejecucion_original", "fecha_declaracion", *[f"dev_2026_{i:02d}" for i in range(1, 12)]]]
